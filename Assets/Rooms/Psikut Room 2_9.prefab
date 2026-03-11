@@ -197,18 +197,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 61df237895d06a945b7306831210aea0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Doors
-  entranceTriggers:
-  - {fileID: 1205557604326357578}
-  - {fileID: 7447786585343871934}
-  doors:
-  - {fileID: 3223984340433208766}
-  - {fileID: 5824991776095955780}
-  animatedDoors:
-  - {fileID: 8883650005878771744}
-  - {fileID: 5421245188872269374}
+  doorPrefab: {fileID: 0}
+  animatedDoorPrefab: {fileID: 0}
+  triggerPrefab: {fileID: 0}
   animationClipName: open
-  navMeshSurface: {fileID: 0}
-  currentLevel: 1
 --- !u!1 &1215807480752836818
 GameObject:
   m_ObjectHideFlags: 0

@@ -13,22 +13,131 @@ public class RoomGenerator : MonoBehaviour
     [SerializeField] private GameObject[] roomPrefabs;
     [SerializeField] private GameObject[] treasureRoomPrefabs;
     [SerializeField] private GameObject endRoomPrefab;
-    [SerializeField] private float boundsShrink = 0.5f;
     [SerializeField] private GameObject[] prefabsToCleanOnSwap;
     [SerializeField] private LoadingScreenController loadingScreen;
     [SerializeField] private int treasureRoomCount = 2;
+    [SerializeField] private float boundsGridCellSize = 5f;
+    [SerializeField] private int overlapWindow = 2;
+    [SerializeField] private int maxBranchDepth = 3;
 
     private RoomActivator roomActivator;
     private List<GameObject> spawnedRooms = new List<GameObject>();
-    private List<Bounds> placedBounds = new List<Bounds>();
+    private List<List<Bounds>> placedMultiBounds = new List<List<Bounds>>();
     private List<int> spawnedPrefabIndices = new List<int>();
     private List<bool> spawnedIsTreasure = new List<bool>();
     private List<Vector3> spawnedPositions = new List<Vector3>();
     private List<Quaternion> spawnedRotations = new List<Quaternion>();
+    private List<Transform> spawnedUsedEntry = new List<Transform>();
+    private List<List<GameObject>> branchRoomsPerMain = new List<List<GameObject>>();
     private GameObject startRoom;
-    private Bounds startBounds;
+    private List<Bounds> startMultiBounds;
     private GameObject endRoom;
     private bool hasTutorialRoom = false;
+
+    private List<Transform> GetConnectionPoints(GameObject room, bool mainOnly)
+    {
+        List<Transform> points = new List<Transform>();
+        Transform root = room.transform;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform child = root.GetChild(i);
+            if (child.name != "Entrence" && child.name != "Exit") continue;
+
+            bool isBranch = child.GetComponent<BranchPoint>() != null;
+            if (mainOnly && isBranch) continue;
+
+            points.Add(child);
+        }
+        return points;
+    }
+
+    private List<Transform> GetAllConnectionPoints(GameObject room)
+    {
+        return GetConnectionPoints(room, false);
+    }
+
+    private List<Transform> GetMainConnectionPoints(GameObject room)
+    {
+        return GetConnectionPoints(room, true);
+    }
+
+    private List<Transform> GetBranchOnlyPoints(GameObject room, Transform usedEntry)
+    {
+        List<Transform> points = new List<Transform>();
+        Transform root = room.transform;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform child = root.GetChild(i);
+            if (child.name != "Entrence" && child.name != "Exit") continue;
+            if (child == usedEntry) continue;
+            if (child.GetComponent<BranchPoint>() != null)
+                points.Add(child);
+        }
+        return points;
+    }
+
+    private List<Transform> GetUnusedNonBranchPoints(GameObject room, Transform usedEntry)
+    {
+        List<Transform> points = new List<Transform>();
+        Transform root = room.transform;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform child = root.GetChild(i);
+            if (child.name != "Entrence" && child.name != "Exit") continue;
+            if (child == usedEntry) continue;
+            if (child.GetComponent<BranchPoint>() == null)
+                points.Add(child);
+        }
+        return points;
+    }
+
+    private Transform GetExitPoint(GameObject room, Transform usedEntry)
+    {
+        List<Transform> points = GetMainConnectionPoints(room);
+        Transform farthest = null;
+        float farthestDist = -1f;
+        for (int i = 0; i < points.Count; i++)
+        {
+            if (points[i] == usedEntry) continue;
+            float dist = usedEntry != null
+                ? Vector3.Distance(usedEntry.position, points[i].position)
+                : 0f;
+            if (dist > farthestDist)
+            {
+                farthestDist = dist;
+                farthest = points[i];
+            }
+        }
+        if (farthest == null)
+        {
+            List<Transform> allPoints = GetAllConnectionPoints(room);
+            for (int i = 0; i < allPoints.Count; i++)
+            {
+                if (allPoints[i] == usedEntry) continue;
+                float dist = usedEntry != null
+                    ? Vector3.Distance(usedEntry.position, allPoints[i].position)
+                    : 0f;
+                if (dist > farthestDist)
+                {
+                    farthestDist = dist;
+                    farthest = allPoints[i];
+                }
+            }
+        }
+        if (farthest == null && GetAllConnectionPoints(room).Count > 0)
+            farthest = GetAllConnectionPoints(room)[0];
+        return farthest;
+    }
+
+    private void AlignRoom(GameObject room, Transform roomEntry, Transform targetExit)
+    {
+        Quaternion targetRot = Quaternion.LookRotation(-targetExit.forward, Vector3.up);
+        Quaternion rotDiff = targetRot * Quaternion.Inverse(roomEntry.rotation);
+        room.transform.rotation = rotDiff * room.transform.rotation;
+
+        Vector3 offset = targetExit.position - roomEntry.position;
+        room.transform.position += offset;
+    }
 
     public IEnumerator Generate()
     {
@@ -36,7 +145,7 @@ public class RoomGenerator : MonoBehaviour
         int maxFullRetries = 67;
 
         startRoom = Instantiate(startRoomPrefab, transform.position, transform.rotation);
-        startBounds = GetCombinedBounds(startRoom);
+        startMultiBounds = GetMultiBounds(startRoom);
 
         GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
         if (playerObj != null)
@@ -58,7 +167,7 @@ public class RoomGenerator : MonoBehaviour
         for (int retry = 0; retry < maxFullRetries; retry++)
         {
             ClearRooms();
-            placedBounds.Add(startBounds);
+            placedMultiBounds.Add(startMultiBounds);
 
             Transform currentExit = startExit;
 
@@ -67,40 +176,39 @@ public class RoomGenerator : MonoBehaviour
                 GameObject tutRoom = Instantiate(tutorialRoomPrefab, Vector3.zero, Quaternion.identity);
                 Transform tutEntrance = tutRoom.transform.Find("Entrence");
 
-                Quaternion targetRot = Quaternion.LookRotation(-currentExit.forward, Vector3.up);
-                Quaternion rotDiff = targetRot * Quaternion.Inverse(tutEntrance.rotation);
-                tutRoom.transform.rotation = rotDiff * tutRoom.transform.rotation;
+                AlignRoom(tutRoom, tutEntrance, currentExit);
 
-                Vector3 offset = currentExit.position - tutEntrance.position;
-                tutRoom.transform.position += offset;
+                placedMultiBounds.Add(GetMultiBounds(tutRoom));
+                currentExit = GetExitPoint(tutRoom, tutEntrance);
+                tutRoom.SetActive(false);
 
                 spawnedRooms.Add(tutRoom);
-                placedBounds.Add(GetCombinedBounds(tutRoom));
                 spawnedPrefabIndices.Add(-1);
                 spawnedIsTreasure.Add(false);
                 spawnedPositions.Add(tutRoom.transform.position);
                 spawnedRotations.Add(tutRoom.transform.rotation);
-
-                currentExit = tutRoom.transform.Find("Exit");
+                spawnedUsedEntry.Add(tutEntrance);
+                branchRoomsPerMain.Add(new List<GameObject>());
             }
 
             int firstPrefabIndex = Random.Range(0, roomPrefabs.Length);
             GameObject firstRoom = Instantiate(roomPrefabs[firstPrefabIndex], Vector3.zero, Quaternion.identity);
-            Transform firstEntrance = firstRoom.transform.Find("Entrence");
 
-            Quaternion targetRotation = Quaternion.LookRotation(-currentExit.forward, Vector3.up);
-            Quaternion rotationDifference = targetRotation * Quaternion.Inverse(firstEntrance.rotation);
-            firstRoom.transform.rotation = rotationDifference * firstRoom.transform.rotation;
+            List<Transform> firstPoints = GetMainConnectionPoints(firstRoom);
+            Transform firstEntry = firstPoints.Count > 0 ? firstPoints[0] : firstRoom.transform.Find("Entrence");
 
-            Vector3 posOffset = currentExit.position - firstEntrance.position;
-            firstRoom.transform.position += posOffset;
+            AlignRoom(firstRoom, firstEntry, currentExit);
+
+            placedMultiBounds.Add(GetMultiBounds(firstRoom));
+            firstRoom.SetActive(false);
 
             spawnedRooms.Add(firstRoom);
-            placedBounds.Add(GetCombinedBounds(firstRoom));
             spawnedPrefabIndices.Add(firstPrefabIndex);
             spawnedIsTreasure.Add(false);
             spawnedPositions.Add(firstRoom.transform.position);
             spawnedRotations.Add(firstRoom.transform.rotation);
+            spawnedUsedEntry.Add(firstEntry);
+            branchRoomsPerMain.Add(new List<GameObject>());
 
             int normalTarget = roomCount + (hasTutorialRoom ? 1 : 0);
 
@@ -111,9 +219,15 @@ public class RoomGenerator : MonoBehaviour
 
             yield return StartCoroutine(BuildTreasureRoomsCoroutine());
 
+            if (!buildChainResult)
+                continue;
+
+            yield return StartCoroutine(ValidateEndRoomCoroutine());
+
             if (buildChainResult)
             {
-                PlaceEndRoom();
+                yield return StartCoroutine(BuildBranchesCoroutine());
+
                 BuildAllNavMeshes();
                 InitRoomActivator();
 
@@ -132,21 +246,225 @@ public class RoomGenerator : MonoBehaviour
             loadingScreen.StartFadeOut();
     }
 
+    private IEnumerator BuildBranchesCoroutine()
+    {
+        for (int mainIdx = 0; mainIdx < spawnedRooms.Count; mainIdx++)
+        {
+            if (spawnedRooms[mainIdx] == null) continue;
+
+            List<Transform> branchPoints = GetBranchOnlyPoints(spawnedRooms[mainIdx], spawnedUsedEntry[mainIdx]);
+            Transform mainExit = GetExitPoint(spawnedRooms[mainIdx], spawnedUsedEntry[mainIdx]);
+
+            for (int bp = 0; bp < branchPoints.Count; bp++)
+            {
+                if (branchPoints[bp] == mainExit) continue;
+
+                yield return StartCoroutine(BuildSingleBranch(branchPoints[bp], mainIdx));
+            }
+
+            List<Transform> unusedMain = GetUnusedNonBranchPoints(spawnedRooms[mainIdx], spawnedUsedEntry[mainIdx]);
+            for (int up = 0; up < unusedMain.Count; up++)
+            {
+                if (unusedMain[up] == mainExit) continue;
+
+                yield return StartCoroutine(BuildSingleBranch(unusedMain[up], mainIdx));
+            }
+        }
+    }
+
+    private IEnumerator BuildSingleBranch(Transform branchExit, int parentMainIdx)
+    {
+        Transform currentExit = branchExit;
+
+        for (int depth = 0; depth < maxBranchDepth; depth++)
+        {
+            List<int> candidates = new List<int>();
+            for (int p = 0; p < roomPrefabs.Length; p++)
+                candidates.Add(p);
+
+            for (int s = candidates.Count - 1; s > 0; s--)
+            {
+                int r = Random.Range(0, s + 1);
+                int tmp = candidates[s];
+                candidates[s] = candidates[r];
+                candidates[r] = tmp;
+            }
+
+            bool placed = false;
+            int boundsIndex = placedMultiBounds.Count;
+
+            foreach (int prefabIndex in candidates)
+            {
+                GameObject newRoom = Instantiate(roomPrefabs[prefabIndex], Vector3.zero, Quaternion.identity);
+
+                Transform usedEntry;
+                if (TryPlaceRoom(newRoom, currentExit, boundsIndex, out usedEntry))
+                {
+                    List<Bounds> newMultiBounds = GetMultiBounds(newRoom);
+                    newRoom.SetActive(false);
+                    placedMultiBounds.Add(newMultiBounds);
+                    branchRoomsPerMain[parentMainIdx].Add(newRoom);
+
+                    currentExit = GetExitPoint(newRoom, usedEntry);
+                    placed = true;
+                    break;
+                }
+
+                Destroy(newRoom);
+            }
+
+            if (!placed) break;
+
+            yield return null;
+        }
+    }
+
+    private Transform GetLastExit()
+    {
+        int last = spawnedRooms.Count - 1;
+        return GetExitPoint(spawnedRooms[last], spawnedUsedEntry[last]);
+    }
+
+    private bool TryPlaceRoom(GameObject room, Transform previousExit, int newChainIndex, out Transform usedEntry)
+    {
+        List<Transform> points = GetAllConnectionPoints(room);
+        usedEntry = null;
+
+        for (int i = points.Count - 1; i > 0; i--)
+        {
+            int j = Random.Range(0, i + 1);
+            Transform tmp = points[i];
+            points[i] = points[j];
+            points[j] = tmp;
+        }
+
+        for (int i = 0; i < points.Count; i++)
+        {
+            AlignRoom(room, points[i], previousExit);
+
+            List<Bounds> newMultiBounds = GetMultiBounds(room);
+
+            if (!OverlapsNearby(newMultiBounds, newChainIndex))
+            {
+                usedEntry = points[i];
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool TryPlaceRoomMainOnly(GameObject room, Transform previousExit, int newChainIndex, out Transform usedEntry)
+    {
+        List<Transform> points = GetMainConnectionPoints(room);
+        usedEntry = null;
+
+        for (int i = points.Count - 1; i > 0; i--)
+        {
+            int j = Random.Range(0, i + 1);
+            Transform tmp = points[i];
+            points[i] = points[j];
+            points[j] = tmp;
+        }
+
+        for (int i = 0; i < points.Count; i++)
+        {
+            AlignRoom(room, points[i], previousExit);
+
+            List<Bounds> newMultiBounds = GetMultiBounds(room);
+
+            if (!OverlapsNearby(newMultiBounds, newChainIndex))
+            {
+                usedEntry = points[i];
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private IEnumerator ValidateEndRoomCoroutine()
+    {
+        buildChainResult = false;
+        if (endRoomPrefab == null || spawnedRooms.Count == 0)
+        {
+            buildChainResult = true;
+            yield break;
+        }
+
+        int maxAttempts = 10;
+
+        for (int attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            if (spawnedRooms.Count == 0)
+            {
+                buildChainResult = false;
+                yield break;
+            }
+
+            Transform lastExit = GetLastExit();
+            GameObject testEnd = Instantiate(endRoomPrefab, Vector3.zero, Quaternion.identity);
+
+            int newChainIndex = placedMultiBounds.Count;
+            Transform usedEntry;
+
+            if (TryPlaceRoom(testEnd, lastExit, newChainIndex, out usedEntry))
+            {
+                testEnd.SetActive(false);
+                endRoom = testEnd;
+                buildChainResult = true;
+                yield break;
+            }
+
+            Destroy(testEnd);
+
+            int last = spawnedRooms.Count - 1;
+            Destroy(spawnedRooms[last]);
+            spawnedRooms.RemoveAt(last);
+            placedMultiBounds.RemoveAt(last + 1);
+            spawnedPrefabIndices.RemoveAt(last);
+            spawnedIsTreasure.RemoveAt(last);
+            spawnedPositions.RemoveAt(last);
+            spawnedRotations.RemoveAt(last);
+            spawnedUsedEntry.RemoveAt(last);
+            branchRoomsPerMain.RemoveAt(last);
+
+            yield return null;
+        }
+
+        buildChainResult = false;
+    }
+
     private void BuildAllNavMeshes()
     {
         for (int i = 0; i < spawnedRooms.Count; i++)
         {
             if (spawnedRooms[i] == null) continue;
+            spawnedRooms[i].SetActive(true);
             NavMeshSurface surface = spawnedRooms[i].GetComponentInChildren<NavMeshSurface>();
             if (surface != null)
                 surface.BuildNavMesh();
+            spawnedRooms[i].SetActive(false);
+
+            List<GameObject> branches = branchRoomsPerMain[i];
+            for (int b = 0; b < branches.Count; b++)
+            {
+                if (branches[b] == null) continue;
+                branches[b].SetActive(true);
+                NavMeshSurface bSurface = branches[b].GetComponentInChildren<NavMeshSurface>();
+                if (bSurface != null)
+                    bSurface.BuildNavMesh();
+                branches[b].SetActive(false);
+            }
         }
 
         if (endRoom != null)
         {
+            endRoom.SetActive(true);
             NavMeshSurface surface = endRoom.GetComponentInChildren<NavMeshSurface>();
             if (surface != null)
                 surface.BuildNavMesh();
+            endRoom.SetActive(false);
         }
     }
 
@@ -154,7 +472,7 @@ public class RoomGenerator : MonoBehaviour
     {
         if (roomActivator == null)
             roomActivator = gameObject.AddComponent<RoomActivator>();
-        roomActivator.Init(spawnedRooms, startRoom, endRoom);
+        roomActivator.Init(spawnedRooms, startRoom, endRoom, branchRoomsPerMain);
     }
 
     private bool buildChainResult;
@@ -171,7 +489,7 @@ public class RoomGenerator : MonoBehaviour
         while (spawnedRooms.Count < roomCount)
         {
             int i = spawnedRooms.Count;
-            Transform previousExit = spawnedRooms[spawnedRooms.Count - 1].transform.Find("Exit");
+            Transform previousExit = GetLastExit();
 
             if (!failedPrefabsPerStep.ContainsKey(i))
                 failedPrefabsPerStep[i] = new HashSet<int>();
@@ -196,11 +514,13 @@ public class RoomGenerator : MonoBehaviour
 
                 Destroy(spawnedRooms[last]);
                 spawnedRooms.RemoveAt(last);
-                placedBounds.RemoveAt(last + 1);
+                placedMultiBounds.RemoveAt(last + 1);
                 spawnedPrefabIndices.RemoveAt(last);
                 spawnedIsTreasure.RemoveAt(last);
                 spawnedPositions.RemoveAt(last);
                 spawnedRotations.RemoveAt(last);
+                spawnedUsedEntry.RemoveAt(last);
+                branchRoomsPerMain.RemoveAt(last);
 
                 totalBacktracks++;
                 if (totalBacktracks > maxTotalBacktracks)
@@ -228,29 +548,26 @@ public class RoomGenerator : MonoBehaviour
                 candidates[r] = tmp;
             }
 
+            int newChainIndex = placedMultiBounds.Count;
+
             bool placed = false;
             foreach (int prefabIndex in candidates)
             {
                 GameObject newRoom = Instantiate(roomPrefabs[prefabIndex], Vector3.zero, Quaternion.identity);
-                Transform newEntrance = newRoom.transform.Find("Entrence");
 
-                Quaternion target = Quaternion.LookRotation(-previousExit.forward, Vector3.up);
-                Quaternion rotDiff = target * Quaternion.Inverse(newEntrance.rotation);
-                newRoom.transform.rotation = rotDiff * newRoom.transform.rotation;
-
-                Vector3 posOffset = previousExit.position - newEntrance.position;
-                newRoom.transform.position += posOffset;
-
-                Bounds newBounds = GetCombinedBounds(newRoom);
-
-                if (!OverlapsAny(newBounds))
+                Transform usedEntry;
+                if (TryPlaceRoomMainOnly(newRoom, previousExit, newChainIndex, out usedEntry))
                 {
+                    List<Bounds> newMultiBounds = GetMultiBounds(newRoom);
+                    newRoom.SetActive(false);
                     spawnedRooms.Add(newRoom);
-                    placedBounds.Add(newBounds);
+                    placedMultiBounds.Add(newMultiBounds);
                     spawnedPrefabIndices.Add(prefabIndex);
                     spawnedIsTreasure.Add(false);
                     spawnedPositions.Add(newRoom.transform.position);
                     spawnedRotations.Add(newRoom.transform.rotation);
+                    spawnedUsedEntry.Add(usedEntry);
+                    branchRoomsPerMain.Add(new List<GameObject>());
                     placed = true;
                     break;
                 }
@@ -280,7 +597,8 @@ public class RoomGenerator : MonoBehaviour
         {
             bool treasurePlaced = false;
 
-            Transform previousExit = spawnedRooms[spawnedRooms.Count - 1].transform.Find("Exit");
+            Transform previousExit = GetLastExit();
+            int newChainIndex = placedMultiBounds.Count;
 
             List<int> candidates = new List<int>();
             for (int p = 0; p < treasureRoomPrefabs.Length; p++)
@@ -297,25 +615,20 @@ public class RoomGenerator : MonoBehaviour
             foreach (int prefabIndex in candidates)
             {
                 GameObject newRoom = Instantiate(treasureRoomPrefabs[prefabIndex], Vector3.zero, Quaternion.identity);
-                Transform newEntrance = newRoom.transform.Find("Entrence");
 
-                Quaternion target = Quaternion.LookRotation(-previousExit.forward, Vector3.up);
-                Quaternion rotDiff = target * Quaternion.Inverse(newEntrance.rotation);
-                newRoom.transform.rotation = rotDiff * newRoom.transform.rotation;
-
-                Vector3 posOffset = previousExit.position - newEntrance.position;
-                newRoom.transform.position += posOffset;
-
-                Bounds newBounds = GetCombinedBounds(newRoom);
-
-                if (!OverlapsAny(newBounds))
+                Transform usedEntry;
+                if (TryPlaceRoomMainOnly(newRoom, previousExit, newChainIndex, out usedEntry))
                 {
+                    List<Bounds> newMultiBounds = GetMultiBounds(newRoom);
+                    newRoom.SetActive(false);
                     spawnedRooms.Add(newRoom);
-                    placedBounds.Add(newBounds);
+                    placedMultiBounds.Add(newMultiBounds);
                     spawnedPrefabIndices.Add(prefabIndex);
                     spawnedIsTreasure.Add(true);
                     spawnedPositions.Add(newRoom.transform.position);
                     spawnedRotations.Add(newRoom.transform.rotation);
+                    spawnedUsedEntry.Add(usedEntry);
+                    branchRoomsPerMain.Add(new List<GameObject>());
                     treasurePlaced = true;
                     placed++;
                     break;
@@ -332,7 +645,8 @@ public class RoomGenerator : MonoBehaviour
                 while (!spacerPlaced && spacerAttempts < maxSpacers)
                 {
                     spacerAttempts++;
-                    previousExit = spawnedRooms[spawnedRooms.Count - 1].transform.Find("Exit");
+                    previousExit = GetLastExit();
+                    newChainIndex = placedMultiBounds.Count;
 
                     List<int> spacerCandidates = new List<int>();
                     for (int p = 0; p < roomPrefabs.Length; p++)
@@ -349,25 +663,20 @@ public class RoomGenerator : MonoBehaviour
                     foreach (int prefabIndex in spacerCandidates)
                     {
                         GameObject spacer = Instantiate(roomPrefabs[prefabIndex], Vector3.zero, Quaternion.identity);
-                        Transform spacerEntrance = spacer.transform.Find("Entrence");
 
-                        Quaternion target = Quaternion.LookRotation(-previousExit.forward, Vector3.up);
-                        Quaternion rotDiff = target * Quaternion.Inverse(spacerEntrance.rotation);
-                        spacer.transform.rotation = rotDiff * spacer.transform.rotation;
-
-                        Vector3 posOffset = previousExit.position - spacerEntrance.position;
-                        spacer.transform.position += posOffset;
-
-                        Bounds spacerBounds = GetCombinedBounds(spacer);
-
-                        if (!OverlapsAny(spacerBounds))
+                        Transform usedEntry;
+                        if (TryPlaceRoomMainOnly(spacer, previousExit, newChainIndex, out usedEntry))
                         {
+                            List<Bounds> spacerMultiBounds = GetMultiBounds(spacer);
+                            spacer.SetActive(false);
                             spawnedRooms.Add(spacer);
-                            placedBounds.Add(spacerBounds);
+                            placedMultiBounds.Add(spacerMultiBounds);
                             spawnedPrefabIndices.Add(prefabIndex);
                             spawnedIsTreasure.Add(false);
                             spawnedPositions.Add(spacer.transform.position);
                             spawnedRotations.Add(spacer.transform.rotation);
+                            spawnedUsedEntry.Add(usedEntry);
+                            branchRoomsPerMain.Add(new List<GameObject>());
                             spacerPlaced = true;
                             break;
                         }
@@ -396,47 +705,56 @@ public class RoomGenerator : MonoBehaviour
         if (spawnedRooms.Count == 0 || endRoomPrefab == null)
             return;
 
-        Transform lastExit = spawnedRooms[spawnedRooms.Count - 1].transform.Find("Exit");
+        Transform lastExit = GetLastExit();
         endRoom = Instantiate(endRoomPrefab, Vector3.zero, Quaternion.identity);
-        Transform endEntrance = endRoom.transform.Find("Entrence");
 
-        Quaternion target = Quaternion.LookRotation(-lastExit.forward, Vector3.up);
-        Quaternion rotDiff = target * Quaternion.Inverse(endEntrance.rotation);
-        endRoom.transform.rotation = rotDiff * endRoom.transform.rotation;
+        int newChainIndex = placedMultiBounds.Count;
+        Transform usedEntry;
 
-        Vector3 posOffset = lastExit.position - endEntrance.position;
-        endRoom.transform.position += posOffset;
-
-        Bounds endBounds = GetCombinedBounds(endRoom);
-        if (OverlapsAny(endBounds))
+        if (TryPlaceRoom(endRoom, lastExit, newChainIndex, out usedEntry))
+        {
+            endRoom.SetActive(false);
+        }
+        else
         {
             Destroy(endRoom);
             endRoom = null;
         }
     }
 
-    private Bounds GetCombinedBounds(GameObject room)
+    private List<Bounds> GetMultiBounds(GameObject room)
     {
         Renderer[] renderers = room.GetComponentsInChildren<Renderer>();
         if (renderers.Length == 0)
-            return new Bounds(room.transform.position, Vector3.one);
+        {
+            List<Bounds> fallback = new List<Bounds>();
+            fallback.Add(new Bounds(room.transform.position, Vector3.one));
+            return fallback;
+        }
 
-        Bounds bounds = renderers[0].bounds;
-        for (int i = 1; i < renderers.Length; i++)
-            bounds.Encapsulate(renderers[i].bounds);
-
-        return bounds;
+        return RoomBoundsUtil.GenerateMultiBounds(renderers, boundsGridCellSize);
     }
 
-    private bool OverlapsAny(Bounds newBounds)
+    private bool OverlapsNearby(List<Bounds> newBoundsList, int newChainIndex)
     {
-        Bounds shrunk = new Bounds(newBounds.center, newBounds.size - Vector3.one * boundsShrink * 2);
+        int checkMin = Mathf.Max(0, newChainIndex - overlapWindow);
+        int checkMax = newChainIndex - 2;
 
-        for (int i = 0; i < placedBounds.Count; i++)
+        if (checkMin > checkMax) return false;
+
+        for (int n = 0; n < newBoundsList.Count; n++)
         {
-            Bounds existing = new Bounds(placedBounds[i].center, placedBounds[i].size - Vector3.one * boundsShrink * 2);
-            if (shrunk.Intersects(existing))
-                return true;
+            for (int p = checkMin; p <= checkMax; p++)
+            {
+                if (p < 0 || p >= placedMultiBounds.Count) continue;
+
+                List<Bounds> existingList = placedMultiBounds[p];
+                for (int e = 0; e < existingList.Count; e++)
+                {
+                    if (newBoundsList[n].Intersects(existingList[e]))
+                        return true;
+                }
+            }
         }
 
         return false;
@@ -444,6 +762,15 @@ public class RoomGenerator : MonoBehaviour
 
     public void ClearRooms()
     {
+        for (int i = 0; i < branchRoomsPerMain.Count; i++)
+        {
+            for (int b = 0; b < branchRoomsPerMain[i].Count; b++)
+            {
+                if (branchRoomsPerMain[i][b] != null)
+                    Destroy(branchRoomsPerMain[i][b]);
+            }
+        }
+
         foreach (GameObject room in spawnedRooms)
         {
             if (room != null)
@@ -453,11 +780,13 @@ public class RoomGenerator : MonoBehaviour
             Destroy(endRoom);
 
         spawnedRooms.Clear();
-        placedBounds.Clear();
+        placedMultiBounds.Clear();
         spawnedPrefabIndices.Clear();
         spawnedIsTreasure.Clear();
         spawnedPositions.Clear();
         spawnedRotations.Clear();
+        spawnedUsedEntry.Clear();
+        branchRoomsPerMain.Clear();
         endRoom = null;
     }
 }

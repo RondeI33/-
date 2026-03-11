@@ -35181,31 +35181,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1afcc10f473dc3149be50b56fe424c35, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RoomGenerator
-  minRoomCount: 0
-  maxRoomCount: 0
+  minRoomCount: 9
+  maxRoomCount: 13
   startRoomPrefab: {fileID: 4908608673924988208, guid: 43a016ccf097fbf4d886dca567866c8a, type: 3}
   tutorialRoomPrefab: {fileID: 4908608673924988208, guid: caa9958892a2f0b4db282a621c9d3c9d, type: 3}
   roomPrefabs:
   - {fileID: 4908608673924988208, guid: a83a178d6a018ea41a6d0dbe1493fa47, type: 3}
-  - {fileID: 1162254420136401487, guid: 0484d7e7a17d80b4691ee9e9f8a6ad25, type: 3}
-  - {fileID: 4908608673924988208, guid: e6b52e8676dbf1c4f8729f9aaa1889cc, type: 3}
   - {fileID: 1191055899215776080, guid: 975ba06ef3c6b8f4283410505ff60b1a, type: 3}
-  - {fileID: 4908608673924988208, guid: 3e31e4884e3d4cd4787abdef9e02fa7f, type: 3}
-  - {fileID: 3430722119063585212, guid: d38427794db724542b450d3454307e49, type: 3}
-  - {fileID: 3430722119063585212, guid: 42aa0d8124bec494f9ff22ff7bfe499b, type: 3}
-  - {fileID: 4908608673924988208, guid: de6299b1a343bdb44b89b1ec1bbfce79, type: 3}
-  - {fileID: 1162254420136401487, guid: 22a62bd0cff92964f9f82689fe790478, type: 3}
-  - {fileID: 4908608673924988208, guid: 322d40b6b6aa34c4db2d7d2a9ce662db, type: 3}
-  - {fileID: 1191055899215776080, guid: 4bafb6dd69b88c241bc65cb45fab39fa, type: 3}
-  - {fileID: 3430722119063585212, guid: f84aec4d6c5d68a44a53b52bd2f906af, type: 3}
-  - {fileID: 1162254420136401487, guid: bd5f26bd03906574da85dcffa99d392a, type: 3}
-  - {fileID: 1162254420136401487, guid: dd28377e0f7d4724fb1b1b70c1e96c6c, type: 3}
-  - {fileID: 1191055899215776080, guid: 752615b888aeeea41abe585dbebe12cc, type: 3}
-  - {fileID: 3430722119063585212, guid: 27452bfad9c26ff4aadf265f0e0dfc90, type: 3}
   treasureRoomPrefabs:
   - {fileID: 4908608673924988208, guid: 15776bde8fe4f61408a2002f37d2ecb9, type: 3}
   endRoomPrefab: {fileID: 4908608673924988208, guid: ed85aeb5d386a28409b396b75086288d, type: 3}
-  boundsShrink: 0.5
   prefabsToCleanOnSwap:
   - {fileID: 3569667435086729250, guid: e0a2b638b8c16864286c0da0ed6ddfa5, type: 3}
   - {fileID: 9031159519640156825, guid: 4d61c29bf9b12d1459c50e472a676632, type: 3}
@@ -35213,6 +35198,9 @@ MonoBehaviour:
   - {fileID: 6982044411386778965, guid: 03ec25ca165e45c47948977cca0c560c, type: 3}
   loadingScreen: {fileID: 1364445222}
   treasureRoomCount: 1
+  boundsGridCellSize: 5
+  overlapWindow: 2
+  maxBranchDepth: 3
 --- !u!4 &2034762723
 Transform:
   m_ObjectHideFlags: 0

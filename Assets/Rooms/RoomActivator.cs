@@ -1,5 +1,6 @@
-using System.Collections.Generic;
 using UnityEngine;
+using System.Collections;
+using System.Collections.Generic;
 using Unity.AI.Navigation;
 
 public class RoomActivator : MonoBehaviour
@@ -7,6 +8,7 @@ public class RoomActivator : MonoBehaviour
     private List<GameObject> rooms;
     private List<Bounds> roomBoundsCache;
     private List<Vector3> roomCenters;
+    private List<List<GameObject>> branchRooms;
     private GameObject startRoom;
     private GameObject endRoom;
     private int currentRoomIndex = 0;
@@ -20,9 +22,15 @@ public class RoomActivator : MonoBehaviour
 
     public void Init(List<GameObject> spawnedRooms, GameObject start, GameObject end)
     {
+        Init(spawnedRooms, start, end, null);
+    }
+
+    public void Init(List<GameObject> spawnedRooms, GameObject start, GameObject end, List<List<GameObject>> branches)
+    {
         rooms = spawnedRooms;
         startRoom = start;
         endRoom = end;
+        branchRooms = branches;
 
         roomCenters = new List<Vector3>();
         roomBoundsCache = new List<Bounds>();
@@ -56,12 +64,17 @@ public class RoomActivator : MonoBehaviour
         UpdateActiveRooms();
     }
 
-    
     public void RefreshRooms(List<GameObject> spawnedRooms, GameObject start, GameObject end)
+    {
+        RefreshRooms(spawnedRooms, start, end, null);
+    }
+
+    public void RefreshRooms(List<GameObject> spawnedRooms, GameObject start, GameObject end, List<List<GameObject>> branches)
     {
         rooms = spawnedRooms;
         startRoom = start;
         endRoom = end;
+        branchRooms = branches;
 
         roomCenters = new List<Vector3>();
         roomBoundsCache = new List<Bounds>();
@@ -79,7 +92,6 @@ public class RoomActivator : MonoBehaviour
             roomBoundsCache.Add(b);
         }
 
-        
         currentRoomIndex = Mathf.Clamp(currentRoomIndex, 0, rooms.Count - 1);
 
         for (int i = 0; i < rooms.Count; i++)
@@ -145,11 +157,13 @@ public class RoomActivator : MonoBehaviour
             {
                 rooms[i].SetActive(true);
                 OnRoomEnabled(rooms[i]);
+                SetBranchRoomsActive(i, true);
             }
             else if (!shouldBeActive && rooms[i].activeSelf)
             {
                 OnRoomDisabled(rooms[i]);
                 rooms[i].SetActive(false);
+                SetBranchRoomsActive(i, false);
             }
         }
 
@@ -168,6 +182,28 @@ public class RoomActivator : MonoBehaviour
             {
                 OnRoomDisabled(endRoom);
                 endRoom.SetActive(false);
+            }
+        }
+    }
+
+    private void SetBranchRoomsActive(int mainIndex, bool active)
+    {
+        if (branchRooms == null || mainIndex >= branchRooms.Count) return;
+
+        List<GameObject> branches = branchRooms[mainIndex];
+        for (int b = 0; b < branches.Count; b++)
+        {
+            if (branches[b] == null) continue;
+
+            if (active && !branches[b].activeSelf)
+            {
+                branches[b].SetActive(true);
+                OnRoomEnabled(branches[b]);
+            }
+            else if (!active && branches[b].activeSelf)
+            {
+                OnRoomDisabled(branches[b]);
+                branches[b].SetActive(false);
             }
         }
     }

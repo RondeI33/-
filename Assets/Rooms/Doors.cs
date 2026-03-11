@@ -5,19 +5,22 @@ using Unity.AI.Navigation;
 
 public class Doors : MonoBehaviour
 {
-    [SerializeField] private List<Collider> entranceTriggers;
-    [SerializeField] private List<GameObject> doors;
-    [SerializeField] private List<Animation> animatedDoors;
-    [SerializeField] private string animationClipName = "open";
-    [SerializeField] private NavMeshSurface navMeshSurface;
+    private GameObject doorPrefab;
+    private GameObject animatedDoorPrefab;
+    private GameObject triggerPrefab;
+    private string animationClipName = "open";
 
+    private List<Transform> entrancePoints = new List<Transform>();
+    private List<Collider> entranceTriggers = new List<Collider>();
+    private List<GameObject> doors = new List<GameObject>();
+    private List<Animation> animatedDoors = new List<Animation>();
     private List<IEnemy> enemies = new List<IEnemy>();
+    private NavMeshSurface navMeshSurface;
     private bool playerInRoom;
     private bool roomCleared;
     private int triggerOverlapCount;
     private Transform player;
     private Bounds roomBounds;
-    private Bounds activationBounds;
     private bool boundsInitialized;
     private float boundsCheckTimer;
     private const float BoundsCheckInterval = 0.5f;
@@ -27,12 +30,23 @@ public class Doors : MonoBehaviour
 
     private void Start()
     {
+
+        if (doorPrefab == null)
+            doorPrefab = Resources.Load<GameObject>("Door");
+        if (animatedDoorPrefab == null)
+            animatedDoorPrefab = Resources.Load<GameObject>("AnimatedDoor");
+        if (triggerPrefab == null)
+            triggerPrefab = Resources.Load<GameObject>("Trigger");
+
         GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
         if (playerObj != null)
         {
             player = playerObj.transform;
             exitArrow = playerObj.GetComponent<ExitArrowIndicator>();
         }
+
+        navMeshSurface = GetComponentInChildren<NavMeshSurface>();
+        FindEntrancePoints();
 
         IEnemy[] found = GetComponentsInChildren<IEnemy>(true);
         for (int i = 0; i < found.Length; i++)
@@ -41,6 +55,10 @@ public class Doors : MonoBehaviour
             enemies.Add(found[i]);
             found[i].SetDoors(this);
         }
+
+        InitRoomBounds();
+        SpawnTriggers();
+        SpawnDoors();
 
         for (int i = 0; i < doors.Count; i++)
         {
@@ -58,8 +76,64 @@ public class Doors : MonoBehaviour
             animatedDoors[i].Sample();
             animatedDoors[i].Stop();
         }
+    }
 
-        InitRoomBounds();
+    private void FindEntrancePoints()
+    {
+        Transform root = transform;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform child = root.GetChild(i);
+            if (child.name == "Entrence" || child.name == "Exit")
+                entrancePoints.Add(child);
+        }
+    }
+
+    private void SpawnTriggers()
+    {
+        if (triggerPrefab == null) return;
+
+        for (int i = 0; i < entrancePoints.Count; i++)
+        {
+            if (entrancePoints[i] == null) continue;
+
+            GameObject triggerObj = Instantiate(triggerPrefab, entrancePoints[i].position, entrancePoints[i].rotation, transform);
+            Collider col = triggerObj.GetComponent<Collider>();
+            if (col == null)
+                col = triggerObj.GetComponentInChildren<Collider>();
+            if (col != null)
+            {
+                col.isTrigger = true;
+                entranceTriggers.Add(col);
+            }
+        }
+    }
+
+    private void SpawnDoors()
+    {
+        for (int i = 0; i < entrancePoints.Count; i++)
+        {
+            if (entrancePoints[i] == null) continue;
+
+            Vector3 pos = entrancePoints[i].position;
+            Quaternion rot = entrancePoints[i].rotation;
+
+            if (doorPrefab != null)
+            {
+                GameObject door = Instantiate(doorPrefab, pos, rot, transform);
+                doors.Add(door);
+            }
+
+            if (animatedDoorPrefab != null)
+            {
+                GameObject animDoor = Instantiate(animatedDoorPrefab, pos, rot, transform);
+                Animation anim = animDoor.GetComponent<Animation>();
+                if (anim == null)
+                    anim = animDoor.GetComponentInChildren<Animation>();
+                if (anim != null)
+                    animatedDoors.Add(anim);
+            }
+        }
     }
 
     private void InitRoomBounds()
@@ -71,20 +145,12 @@ public class Doors : MonoBehaviour
         for (int i = 1; i < renderers.Length; i++)
             roomBounds.Encapsulate(renderers[i].bounds);
 
-        activationBounds = new Bounds(roomBounds.center, roomBounds.size - Vector3.one * 4f);
         roomBounds.Expand(4f);
         boundsInitialized = true;
     }
 
     private void Update()
     {
-        if (!activated && !roomCleared && boundsInitialized && player != null)
-        {
-            if (activationBounds.Contains(player.position))
-                ActivateRoom();
-            return;
-        }
-
         if (!playerInRoom || roomCleared || !boundsInitialized) return;
 
         boundsCheckTimer -= Time.deltaTime;
@@ -104,6 +170,32 @@ public class Doors : MonoBehaviour
 
         if (!anyInsideBounds)
             CheckRoomCleared();
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        if (other == null) return;
+        if (other.gameObject.layer != LayerMask.NameToLayer("Player")) return;
+
+        triggerOverlapCount++;
+
+        if (!activated)
+        {
+            ActivateRoom();
+            return;
+        }
+
+        if (exitArrow != null && exitArrow.GetActiveDoors() != null && exitArrow.GetActiveDoors() != this)
+            exitArrow.Hide();
+    }
+
+    private void OnTriggerExit(Collider other)
+    {
+        if (roomCleared) return;
+        if (other.gameObject.layer != LayerMask.NameToLayer("Player")) return;
+
+        triggerOverlapCount--;
+        if (triggerOverlapCount < 0) triggerOverlapCount = 0;
     }
 
     private void ActivateRoom()
@@ -150,23 +242,6 @@ public class Doors : MonoBehaviour
         }
     }
 
-    private void OnTriggerEnter(Collider other)
-    {
-        if (other == null) return;
-        if (other.gameObject.layer != LayerMask.NameToLayer("Player")) return;
-
-        triggerOverlapCount++;
-
-        if (!activated)
-        {
-            ActivateRoom();
-            return;
-        }
-
-        if (exitArrow != null && exitArrow.GetActiveDoors() != null && exitArrow.GetActiveDoors() != this)
-            exitArrow.Hide();
-    }
-
     private Collider FindClosestTrigger(Vector3 position)
     {
         Collider closest = null;
@@ -182,15 +257,6 @@ public class Doors : MonoBehaviour
             }
         }
         return closest;
-    }
-
-    private void OnTriggerExit(Collider other)
-    {
-        if (roomCleared) return;
-        if (other.gameObject.layer != LayerMask.NameToLayer("Player")) return;
-
-        triggerOverlapCount--;
-        if (triggerOverlapCount < 0) triggerOverlapCount = 0;
     }
 
     public void OnEnemyDied(IEnemy enemy)

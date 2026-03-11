@@ -106,7 +106,7 @@ public class Crouch : MonoBehaviour
     private bool CanStandUp()
     {
         Vector3 topPoint = transform.position + Vector3.up * (controller.height - standCheckHeight) - Vector3.up * 0.5f;
-        int layerMask = ~(1 << gameObject.layer);
+        int layerMask = ~((1 << gameObject.layer) | (1 << LayerMask.NameToLayer("Ignore Raycast")));
         return !Physics.CheckSphere(topPoint, 0.5f, layerMask);
     }
 }
