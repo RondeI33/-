@@ -1284,14 +1284,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 61df237895d06a945b7306831210aea0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Doors
-  detectionZones: []
-  entrancePoints: []
-  doorPrefab: {fileID: 6221682415935987263, guid: 26860496348429548b91749cc752030a, type: 3}
-  animatedDoorPrefab: {fileID: 2689137948234094072, guid: 339923554fd32f34d9ec4f2f6cd0727a, type: 3}
-  animationClipName: open
-  navMeshSurface: {fileID: 0}
-  detectionShrink: 0.95
-  gridCellSize: 5
 --- !u!114 &9077901552187117682
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3213,6 +3205,54 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3759181145145010218, guid: 37e14fab8cbb88a4dbe3e42cb96c686e, type: 3}
+      propertyPath: dashSpeed
+      value: 50
+      objectReference: {fileID: 0}
+    - target: {fileID: 3759181145145010218, guid: 37e14fab8cbb88a4dbe3e42cb96c686e, type: 3}
+      propertyPath: agentSpeed
+      value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 3759181145145010218, guid: 37e14fab8cbb88a4dbe3e42cb96c686e, type: 3}
+      propertyPath: axeFireRate
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3759181145145010218, guid: 37e14fab8cbb88a4dbe3e42cb96c686e, type: 3}
+      propertyPath: stunDuration
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 3759181145145010218, guid: 37e14fab8cbb88a4dbe3e42cb96c686e, type: 3}
+      propertyPath: axeFlightTime
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3759181145145010218, guid: 37e14fab8cbb88a4dbe3e42cb96c686e, type: 3}
+      propertyPath: axesPerVolley
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3759181145145010218, guid: 37e14fab8cbb88a4dbe3e42cb96c686e, type: 3}
+      propertyPath: axeRespawnTime
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3759181145145010218, guid: 37e14fab8cbb88a4dbe3e42cb96c686e, type: 3}
+      propertyPath: dashChargeTime
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3759181145145010218, guid: 37e14fab8cbb88a4dbe3e42cb96c686e, type: 3}
+      propertyPath: spiralAxeCount
+      value: 67
+      objectReference: {fileID: 0}
+    - target: {fileID: 3759181145145010218, guid: 37e14fab8cbb88a4dbe3e42cb96c686e, type: 3}
+      propertyPath: spiralAxeSpeed
+      value: 24
+      objectReference: {fileID: 0}
+    - target: {fileID: 3759181145145010218, guid: 37e14fab8cbb88a4dbe3e42cb96c686e, type: 3}
+      propertyPath: axeDelayBetween
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3759181145145010218, guid: 37e14fab8cbb88a4dbe3e42cb96c686e, type: 3}
+      propertyPath: dashMaxDuration
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 3759181145145010218, guid: 37e14fab8cbb88a4dbe3e42cb96c686e, type: 3}
       propertyPath: stunWobbleTarget
       value: 
       objectReference: {fileID: 0}
@@ -3220,6 +3260,22 @@ PrefabInstance:
       propertyPath: hitParticlePrefab
       value: 
       objectReference: {fileID: 2536517189527467608, guid: 322aa3cd842193449a99836f6d5809bd, type: 3}
+    - target: {fileID: 3759181145145010218, guid: 37e14fab8cbb88a4dbe3e42cb96c686e, type: 3}
+      propertyPath: predictionStrength
+      value: 0.1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3759181145145010218, guid: 37e14fab8cbb88a4dbe3e42cb96c686e, type: 3}
+      propertyPath: spiralFireInterval
+      value: 0.01
+      objectReference: {fileID: 0}
+    - target: {fileID: 3759181145145010218, guid: 37e14fab8cbb88a4dbe3e42cb96c686e, type: 3}
+      propertyPath: throwSwingDuration
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3759181145145010218, guid: 37e14fab8cbb88a4dbe3e42cb96c686e, type: 3}
+      propertyPath: throwWindupDuration
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

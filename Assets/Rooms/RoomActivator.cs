@@ -1,303 +1,105 @@
 using UnityEngine;
-using System.Collections;
 using System.Collections.Generic;
-using Unity.AI.Navigation;
 
 public class RoomActivator : MonoBehaviour
 {
-    private List<GameObject> rooms;
-    private List<Bounds> roomBoundsCache;
-    private List<Vector3> roomCenters;
-    private List<List<GameObject>> branchRooms;
-    private GameObject startRoom;
-    private GameObject endRoom;
-    private int currentRoomIndex = 0;
-    private int roomWindow = 2;
-    private Transform player;
+    private List<GameObject> allRooms = new List<GameObject>();
+    private Dictionary<GameObject, List<GameObject>> adjacency = new Dictionary<GameObject, List<GameObject>>();
+    private GameObject currentRoom;
 
-    public void SetStartRoom(GameObject newStart)
+    public void Init(List<GameObject> rooms, float snapThreshold)
     {
-        startRoom = newStart;
+        allRooms = new List<GameObject>(rooms);
+        adjacency.Clear();
+        currentRoom = null;
+
+        for (int i = 0; i < allRooms.Count; i++)
+            if (allRooms[i] != null)
+                adjacency[allRooms[i]] = new List<GameObject>();
+
+        BuildAdjacency(snapThreshold);
+
+        for (int i = 0; i < allRooms.Count; i++)
+            if (allRooms[i] != null)
+                allRooms[i].SetActive(false);
+
+        if (allRooms.Count > 0 && allRooms[0] != null)
+            ActivateAround(allRooms[0]);
     }
 
-    public void Init(List<GameObject> spawnedRooms, GameObject start, GameObject end)
+    private List<Transform> GetConnectionPoints(GameObject room)
     {
-        Init(spawnedRooms, start, end, null);
+        List<Transform> pts = new List<Transform>();
+        Transform root = room.transform;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform child = root.GetChild(i);
+            if (child.name == "Entrence" || child.name == "Exit")
+                pts.Add(child);
+        }
+        return pts;
     }
 
-    public void Init(List<GameObject> spawnedRooms, GameObject start, GameObject end, List<List<GameObject>> branches)
+    private void BuildAdjacency(float snapThreshold)
     {
-        rooms = spawnedRooms;
-        startRoom = start;
-        endRoom = end;
-        branchRooms = branches;
+        List<(GameObject room, Vector3 pos)> allPts = new List<(GameObject, Vector3)>();
 
-        roomCenters = new List<Vector3>();
-        roomBoundsCache = new List<Bounds>();
-
-        for (int i = 0; i < rooms.Count; i++)
+        for (int i = 0; i < allRooms.Count; i++)
         {
-            if (rooms[i] == null)
-            {
-                roomCenters.Add(Vector3.zero);
-                roomBoundsCache.Add(new Bounds());
-                continue;
-            }
-            Bounds b = ComputeRoomBounds(rooms[i]);
-            roomCenters.Add(b.center);
-            roomBoundsCache.Add(b);
+            if (allRooms[i] == null) continue;
+            bool was = allRooms[i].activeSelf;
+            allRooms[i].SetActive(true);
+            List<Transform> pts = GetConnectionPoints(allRooms[i]);
+            for (int j = 0; j < pts.Count; j++)
+                allPts.Add((allRooms[i], pts[j].position));
+            allRooms[i].SetActive(was);
         }
 
-        GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
-        if (playerObj != null) player = playerObj.transform;
-
-        currentRoomIndex = 0;
-
-        for (int i = 0; i < rooms.Count; i++)
+        for (int a = 0; a < allPts.Count; a++)
         {
-            if (rooms[i] == null) continue;
-            Doors doors = rooms[i].GetComponentInChildren<Doors>();
-            if (doors != null)
-                StartCoroutine(DelayedRefreshDoors(doors));
-        }
-
-        UpdateActiveRooms();
-    }
-
-    public void RefreshRooms(List<GameObject> spawnedRooms, GameObject start, GameObject end)
-    {
-        RefreshRooms(spawnedRooms, start, end, null);
-    }
-
-    public void RefreshRooms(List<GameObject> spawnedRooms, GameObject start, GameObject end, List<List<GameObject>> branches)
-    {
-        rooms = spawnedRooms;
-        startRoom = start;
-        endRoom = end;
-        branchRooms = branches;
-
-        roomCenters = new List<Vector3>();
-        roomBoundsCache = new List<Bounds>();
-
-        for (int i = 0; i < rooms.Count; i++)
-        {
-            if (rooms[i] == null)
+            for (int b = a + 1; b < allPts.Count; b++)
             {
-                roomCenters.Add(Vector3.zero);
-                roomBoundsCache.Add(new Bounds());
-                continue;
-            }
-            Bounds b = ComputeRoomBounds(rooms[i]);
-            roomCenters.Add(b.center);
-            roomBoundsCache.Add(b);
-        }
+                if (allPts[a].room == allPts[b].room) continue;
+                if (Vector3.Distance(allPts[a].pos, allPts[b].pos) > snapThreshold) continue;
 
-        currentRoomIndex = Mathf.Clamp(currentRoomIndex, 0, rooms.Count - 1);
+                GameObject ra = allPts[a].room;
+                GameObject rb = allPts[b].room;
 
-        for (int i = 0; i < rooms.Count; i++)
-        {
-            if (rooms[i] == null) continue;
-            Doors doors = rooms[i].GetComponentInChildren<Doors>();
-            if (doors != null)
-                StartCoroutine(DelayedRefreshDoors(doors));
-        }
+                if (!adjacency.ContainsKey(ra)) adjacency[ra] = new List<GameObject>();
+                if (!adjacency.ContainsKey(rb)) adjacency[rb] = new List<GameObject>();
 
-        UpdateActiveRooms();
-    }
-
-    private void Update()
-    {
-        if (player == null || rooms == null) return;
-
-        if (rooms[currentRoomIndex] != null && roomBoundsCache[currentRoomIndex].Contains(player.position))
-            return;
-
-        int searchMin = Mathf.Max(0, currentRoomIndex - roomWindow);
-        int searchMax = Mathf.Min(rooms.Count - 1, currentRoomIndex + roomWindow);
-
-        int best = currentRoomIndex;
-        float bestDist = float.MaxValue;
-
-        for (int i = searchMin; i <= searchMax; i++)
-        {
-            if (rooms[i] == null) continue;
-            Bounds b = roomBoundsCache[i];
-            if (b.Contains(player.position))
-            {
-                best = i;
-                bestDist = 0f;
-                break;
-            }
-            float dist = b.SqrDistance(player.position);
-            if (dist < bestDist)
-            {
-                bestDist = dist;
-                best = i;
-            }
-        }
-
-        if (best != currentRoomIndex)
-        {
-            currentRoomIndex = best;
-            UpdateActiveRooms();
-        }
-    }
-
-    private void UpdateActiveRooms()
-    {
-        int min = currentRoomIndex - roomWindow;
-        int max = currentRoomIndex + roomWindow;
-
-        for (int i = 0; i < rooms.Count; i++)
-        {
-            if (rooms[i] == null) continue;
-            bool shouldBeActive = i >= min && i <= max;
-
-            if (shouldBeActive && !rooms[i].activeSelf)
-            {
-                rooms[i].SetActive(true);
-                OnRoomEnabled(rooms[i]);
-                SetBranchRoomsActive(i, true);
-            }
-            else if (!shouldBeActive && rooms[i].activeSelf)
-            {
-                OnRoomDisabled(rooms[i]);
-                rooms[i].SetActive(false);
-                SetBranchRoomsActive(i, false);
-            }
-        }
-
-        if (startRoom != null && !startRoom.activeSelf)
-            startRoom.SetActive(true);
-
-        if (endRoom != null)
-        {
-            bool endActive = max >= rooms.Count;
-            if (endActive && !endRoom.activeSelf)
-            {
-                endRoom.SetActive(true);
-                OnRoomEnabled(endRoom);
-            }
-            else if (!endActive && endRoom.activeSelf)
-            {
-                OnRoomDisabled(endRoom);
-                endRoom.SetActive(false);
+                if (!adjacency[ra].Contains(rb)) adjacency[ra].Add(rb);
+                if (!adjacency[rb].Contains(ra)) adjacency[rb].Add(ra);
             }
         }
     }
 
-    private void SetBranchRoomsActive(int mainIndex, bool active)
+    public void OnPlayerEnteredRoom(GameObject room)
     {
-        if (branchRooms == null || mainIndex >= branchRooms.Count) return;
-
-        List<GameObject> branches = branchRooms[mainIndex];
-        for (int b = 0; b < branches.Count; b++)
-        {
-            if (branches[b] == null) continue;
-
-            if (active && !branches[b].activeSelf)
-            {
-                branches[b].SetActive(true);
-                OnRoomEnabled(branches[b]);
-            }
-            else if (!active && branches[b].activeSelf)
-            {
-                OnRoomDisabled(branches[b]);
-                branches[b].SetActive(false);
-            }
-        }
+        if (room == null || room == currentRoom) return;
+        currentRoom = room;
+        ActivateAround(room);
     }
 
-    private void OnRoomDisabled(GameObject room)
+    private void ActivateAround(GameObject center)
     {
-        Rigidbody[] bodies = room.GetComponentsInChildren<Rigidbody>();
-        for (int i = 0; i < bodies.Length; i++)
+        HashSet<GameObject> shouldBeActive = new HashSet<GameObject>();
+        shouldBeActive.Add(center);
+
+        if (adjacency.ContainsKey(center))
         {
-            if (!bodies[i].isKinematic)
-            {
-                bodies[i].linearVelocity = Vector3.zero;
-                bodies[i].angularVelocity = Vector3.zero;
-                bodies[i].isKinematic = true;
-                bodies[i].gameObject.AddComponent<WasNonKinematic>();
-            }
+            List<GameObject> neighbors = adjacency[center];
+            for (int i = 0; i < neighbors.Count; i++)
+                if (neighbors[i] != null)
+                    shouldBeActive.Add(neighbors[i]);
         }
 
-        Bounds roomBounds = GetRoomBounds(room);
-        GameObject[] pickups = GameObject.FindGameObjectsWithTag("Pickup");
-        for (int i = 0; i < pickups.Length; i++)
+        for (int i = 0; i < allRooms.Count; i++)
         {
-            if (roomBounds.Contains(pickups[i].transform.position))
-            {
-                Rigidbody rb = pickups[i].GetComponent<Rigidbody>();
-                if (rb != null && !rb.isKinematic)
-                {
-                    rb.linearVelocity = Vector3.zero;
-                    rb.angularVelocity = Vector3.zero;
-                    rb.isKinematic = true;
-                    pickups[i].AddComponent<WasNonKinematic>();
-                }
-            }
+            if (allRooms[i] == null) continue;
+            bool want = shouldBeActive.Contains(allRooms[i]);
+            if (allRooms[i].activeSelf != want)
+                allRooms[i].SetActive(want);
         }
     }
-
-    private void OnRoomEnabled(GameObject room)
-    {
-        WasNonKinematic[] markers = room.GetComponentsInChildren<WasNonKinematic>();
-        for (int i = 0; i < markers.Length; i++)
-        {
-            Rigidbody rb = markers[i].GetComponent<Rigidbody>();
-            if (rb != null)
-                rb.isKinematic = false;
-            Destroy(markers[i]);
-        }
-
-        Bounds roomBounds = GetRoomBounds(room);
-        GameObject[] pickups = GameObject.FindGameObjectsWithTag("Pickup");
-        for (int i = 0; i < pickups.Length; i++)
-        {
-            WasNonKinematic marker = pickups[i].GetComponent<WasNonKinematic>();
-            if (marker != null && roomBounds.Contains(pickups[i].transform.position))
-            {
-                Rigidbody rb = pickups[i].GetComponent<Rigidbody>();
-                if (rb != null)
-                    rb.isKinematic = false;
-                Destroy(marker);
-            }
-        }
-
-        NavMeshSurface surface = room.GetComponentInChildren<NavMeshSurface>();
-        if (surface != null)
-            surface.BuildNavMesh();
-
-        Doors doors = room.GetComponentInChildren<Doors>();
-        if (doors != null)
-            StartCoroutine(DelayedRefreshDoors(doors));
-    }
-
-    private Bounds ComputeRoomBounds(GameObject room)
-    {
-        Renderer[] renderers = room.GetComponentsInChildren<Renderer>();
-        if (renderers.Length == 0)
-            return new Bounds(room.transform.position, Vector3.one * 20f);
-        Bounds bounds = renderers[0].bounds;
-        for (int i = 1; i < renderers.Length; i++)
-            bounds.Encapsulate(renderers[i].bounds);
-        return bounds;
-    }
-
-    private Bounds GetRoomBounds(GameObject room)
-    {
-        Bounds b = ComputeRoomBounds(room);
-        b.Expand(2f);
-        return b;
-    }
-
-    private System.Collections.IEnumerator DelayedRefreshDoors(Doors doors)
-    {
-        yield return null;
-        if (doors != null)
-            doors.RefreshDoorState();
-    }
-
-    private class WasNonKinematic : MonoBehaviour { }
 }

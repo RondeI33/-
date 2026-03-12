@@ -35181,8 +35181,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1afcc10f473dc3149be50b56fe424c35, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RoomGenerator
-  minRoomCount: 9
-  maxRoomCount: 13
+  minRoomCount: 100
+  maxRoomCount: 150
   startRoomPrefab: {fileID: 4908608673924988208, guid: 43a016ccf097fbf4d886dca567866c8a, type: 3}
   tutorialRoomPrefab: {fileID: 4908608673924988208, guid: caa9958892a2f0b4db282a621c9d3c9d, type: 3}
   roomPrefabs:
@@ -35190,17 +35190,13 @@ MonoBehaviour:
   - {fileID: 1191055899215776080, guid: 975ba06ef3c6b8f4283410505ff60b1a, type: 3}
   treasureRoomPrefabs:
   - {fileID: 4908608673924988208, guid: 15776bde8fe4f61408a2002f37d2ecb9, type: 3}
-  endRoomPrefab: {fileID: 4908608673924988208, guid: ed85aeb5d386a28409b396b75086288d, type: 3}
-  prefabsToCleanOnSwap:
-  - {fileID: 3569667435086729250, guid: e0a2b638b8c16864286c0da0ed6ddfa5, type: 3}
-  - {fileID: 9031159519640156825, guid: 4d61c29bf9b12d1459c50e472a676632, type: 3}
-  - {fileID: 6982044411386778965, guid: deac30b50897bec4bbbf6ed64ec108b6, type: 3}
-  - {fileID: 6982044411386778965, guid: 03ec25ca165e45c47948977cca0c560c, type: 3}
+  bossRoomPrefab: {fileID: 4908608673924988208, guid: ed85aeb5d386a28409b396b75086288d, type: 3}
   loadingScreen: {fileID: 1364445222}
   treasureRoomCount: 1
-  boundsGridCellSize: 5
+  boundsShrink: 0.25
   overlapWindow: 2
-  maxBranchDepth: 3
+  connectionSnapThreshold: 0.5
+  mainChainFraction: 0.6
 --- !u!4 &2034762723
 Transform:
   m_ObjectHideFlags: 0
