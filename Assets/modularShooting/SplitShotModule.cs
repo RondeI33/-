@@ -7,7 +7,7 @@ public class SplitShotModule : MonoBehaviour, IShotModifier
     [SerializeField] float splitTime = 0.07f;
     [SerializeField] int splitCount = 5;
     [SerializeField] float splitSpread = 15f;
-    [SerializeField] float splitDamageMultiplier = 0.6f;
+    [SerializeField] float splitDamageMultiplier = 0.8f;
 
     public List<ShotData> ProcessShots(List<ShotData> shots)
     {
@@ -43,7 +43,7 @@ public class SplitShotModule : MonoBehaviour, IShotModifier
 
                     int count = data.GetProperty("splitCount", 0);
                     float spread = data.GetProperty("splitSpread", 15f);
-                    float mult = data.GetProperty("splitDamageMultiplier", 0.6f);
+                    float mult = data.GetProperty("splitDamageMultiplier", 0.8f);
                     int moduleId = data.GetProperty("splitModuleId", 0);
                     float tt = data.GetProperty("splitTotalTime", 0f);
 

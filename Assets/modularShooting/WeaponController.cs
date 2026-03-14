@@ -10,7 +10,7 @@ public class WeaponController : MonoBehaviour
     [SerializeField] LayerMask hitLayers;
     [SerializeField] float fireRate = 0.15f;
     [SerializeField] bool autoFire = true;
-    [SerializeField] int projectilePoolSize = 30;
+
 
     [Header("Decals")]
     [SerializeField] GameObject decalPrefab;
@@ -23,10 +23,18 @@ public class WeaponController : MonoBehaviour
         new Color(1f, 1f, 0.3f, 1f)
     };
 
+    [Header("Hit Feedback")]
+    [SerializeField] private AudioSource hitAudioSource;
+    [SerializeField] private AudioClip hitSound;
+    [SerializeField] private float hitPitchMin = 0.9f;
+    [SerializeField] private float hitPitchMax = 1.1f;
+
     private PlayerInput playerInput;
     private InputAction attackAction;
     private IFireSource[] cachedSources;
     private IShotModifier[] cachedModifiers;
+    private HitPopUp hitPopUp;
+    private ImmunePopUp immunePopUp;
     private GameObject[] decalPool;
     private Material[] decalMats;
     private DecalFade[] decalFaders;
@@ -39,6 +47,8 @@ public class WeaponController : MonoBehaviour
     {
         playerInput = GetComponentInParent<PlayerInput>();
         attackAction = playerInput.actions["Attack"];
+        hitPopUp = FindFirstObjectByType<HitPopUp>();
+        immunePopUp = FindFirstObjectByType<ImmunePopUp>();
         RefreshModuleCache();
 
         decalPool = new GameObject[maxDecals];
@@ -75,25 +85,56 @@ public class WeaponController : MonoBehaviour
         }
     }
 
+    Vector3 GetSafeFireOrigin()
+    {
+        Vector3 camPos = playerCamera.transform.position;
+        Vector3 toFirePoint = firePoint.position - camPos;
+        float dist = toFirePoint.magnitude;
+
+        // Cast from camera toward firepoint — if a wall is in between, the barrel has clipped through it
+        if (Physics.Raycast(camPos, toFirePoint.normalized, out RaycastHit hit, dist, hitLayers))
+            return hit.point + hit.normal * 0.05f;
+
+        return firePoint.position;
+    }
+
     public void Fire()
     {
-        if (cachedSources.Length == 0) return;
+        RefreshModuleCache();
+
+        int activeSources = 0;
+        for (int i = 0; i < cachedSources.Length; i++)
+        {
+            if (((MonoBehaviour)cachedSources[i]).isActiveAndEnabled)
+                activeSources++;
+        }
+        if (activeSources == 0) return;
+
+        Vector3 safeOrigin = GetSafeFireOrigin();
 
         List<ShotData> allShots = new List<ShotData>();
+        int activeIndex = 0;
 
         for (int i = 0; i < cachedSources.Length; i++)
         {
-            List<ShotData> shots = cachedSources[i].CreateShots(i, cachedSources.Length);
+            if (!((MonoBehaviour)cachedSources[i]).isActiveAndEnabled) continue;
+
+            List<ShotData> shots = cachedSources[i].CreateShots(activeIndex, activeSources);
             foreach (ShotData shot in shots)
             {
                 if (shot.origin == Vector3.zero)
-                    shot.origin = firePoint.position;
+                    shot.origin = safeOrigin;
+                else
+                    shot.origin = safeOrigin;
+
                 if (shot.direction == Vector3.zero)
                     shot.direction = firePoint.forward;
+
                 shot.hitLayers = hitLayers;
                 shot.weaponController = this;
             }
             allShots.AddRange(shots);
+            activeIndex++;
         }
 
         allShots = RunPipeline(allShots);
@@ -134,7 +175,10 @@ public class WeaponController : MonoBehaviour
     List<ShotData> RunPipeline(List<ShotData> shots)
     {
         foreach (IShotModifier modifier in cachedModifiers)
+        {
+            if (!((MonoBehaviour)modifier).isActiveAndEnabled) continue;
             shots = modifier.ProcessShots(shots);
+        }
         return shots;
     }
 
@@ -174,6 +218,7 @@ public class WeaponController : MonoBehaviour
                     callback.Invoke(info, shot);
 
                 target.TakeDamage(shot.damage, info);
+                ShowHitFeedback(hit.collider);
                 break;
             }
 
@@ -247,13 +292,42 @@ public class WeaponController : MonoBehaviour
         projectilePools[prefab].Enqueue(go);
     }
 
+    public void ShowHitFeedback(Collider hitCollider)
+    {
+        bool isWeakpoint = hitCollider.CompareTag("Weakpoint");
+        bool isBlocking = hitCollider.CompareTag("IgnoreDamage");
+
+        if (isBlocking)
+        {
+            if (immunePopUp)
+                immunePopUp.ShowHit(isWeakpoint);
+        }
+        else
+        {
+            if (hitPopUp)
+                hitPopUp.ShowHit(isWeakpoint);
+            if (hitAudioSource && hitSound)
+            {
+                hitAudioSource.pitch = Random.Range(hitPitchMin, hitPitchMax);
+                hitAudioSource.clip = hitSound;
+                hitAudioSource.Play();
+            }
+        }
+    }
+
     void SpawnDecal(RaycastHit hit)
     {
-        if (decalPrefab == null) return;
-        if (hit.collider.gameObject.layer == LayerMask.NameToLayer("Door")) return;
+        SpawnDecal(hit.point, hit.normal, hit.collider);
+    }
 
-        Vector3 position = hit.point + hit.normal * decalOffset;
-        Quaternion rotation = Quaternion.LookRotation(-hit.normal);
+    public void SpawnDecal(Vector3 point, Vector3 normal, Collider col)
+    {
+        if (decalPrefab == null) return;
+        if (col.gameObject.layer == LayerMask.NameToLayer("Door")) return;
+        if (normal.sqrMagnitude < 0.0001f) return;
+
+        Vector3 position = point + normal * decalOffset;
+        Quaternion rotation = Quaternion.LookRotation(-normal);
 
         if (decalPool[decalIndex] == null)
         {
@@ -276,7 +350,7 @@ public class WeaponController : MonoBehaviour
         if (renderQueue >= 4000)
             renderQueue = 3001;
 
-        Transform target = hit.collider.transform;
+        Transform target = col.transform;
         Vector3 localPos = target.InverseTransformPoint(position);
         Quaternion localRot = Quaternion.Inverse(target.rotation) * rotation;
         decalFaders[decalIndex].Init(decalMats[decalIndex], color, fadeDuration, target, localPos, localRot);

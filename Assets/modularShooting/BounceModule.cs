@@ -16,8 +16,8 @@ public class BounceModule : MonoBehaviour, IShotModifier
             shot.MarkModifierApplied(myId);
 
             int existing = shot.GetProperty("maxBounces", 0);
-            shot.SetProperty("maxBounces", existing + maxBounces);
-            shot.SetProperty("bouncesLeft", existing + maxBounces);
+            shot.SetProperty("maxBounces", existing + maxBounces + 1);
+            shot.SetProperty("bouncesLeft", existing + maxBounces + 1);
             shot.SetProperty("applyEffectsOnBounce", applyEffectsOnBounce);
         }
 

@@ -18907,8 +18907,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1afcc10f473dc3149be50b56fe424c35, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RoomGenerator
-  minRoomCount: 9
-  maxRoomCount: 13
+  minRoomCount: 6
+  maxRoomCount: 7
   startRoomPrefab: {fileID: 4908608673924988208, guid: 43a016ccf097fbf4d886dca567866c8a, type: 3}
   tutorialRoomPrefab: {fileID: 4908608673924988208, guid: caa9958892a2f0b4db282a621c9d3c9d, type: 3}
   roomPrefabs:
@@ -18918,7 +18918,8 @@ MonoBehaviour:
   - {fileID: 4908608673924988208, guid: 15776bde8fe4f61408a2002f37d2ecb9, type: 3}
   bossRoomPrefab: {fileID: 4908608673924988208, guid: ed85aeb5d386a28409b396b75086288d, type: 3}
   loadingScreen: {fileID: 385014689}
-  treasureRoomCount: 1
+  treasureRoomsOnMainPath: 1
+  treasureRoomsOnBranches: 1
   boundsShrink: 0.25
   overlapWindow: 2
   connectionSnapThreshold: 0.5
@@ -38600,6 +38601,7 @@ GameObject:
   - component: {fileID: 2081252386}
   - component: {fileID: 2081252385}
   - component: {fileID: 2081252376}
+  - component: {fileID: 2081252388}
   m_Layer: 0
   m_Name: Model
   m_TagString: Untagged
@@ -38621,7 +38623,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ProjectileShooter
   projectilePrefab: {fileID: 2033986261789412172, guid: 3fa331fee2400aa40b094f8740b47ef6, type: 3}
   damage: 25
-  speed: 30
+  speed: 25
   maxDistance: 200
   spreadAngle: 3
 --- !u!114 &2081252378
@@ -38640,14 +38642,17 @@ MonoBehaviour:
   playerCamera: {fileID: 2025414883}
   hitLayers:
     serializedVersion: 2
-    m_Bits: 65
+    m_Bits: 193
   fireRate: 0.15
   autoFire: 1
-  projectilePoolSize: 30
   decalPrefab: {fileID: 8843963820380974318, guid: d4149dbfaffe94848b78ba40ab4ba60d, type: 3}
-  maxDecals: 50
+  maxDecals: 500
   decalOffset: 0.016
   fadeDuration: 2
+  hitAudioSource: {fileID: 2081252388}
+  hitSound: {fileID: 8300000, guid: ad360e77725808d4dbb5a521408b9c7b, type: 3}
+  hitPitchMin: 0.9
+  hitPitchMax: 1.1
 --- !u!114 &2081252379
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -38713,7 +38718,7 @@ MonoBehaviour:
   splitTime: 0.07
   splitCount: 5
   splitSpread: 15
-  splitDamageMultiplier: 0.6
+  splitDamageMultiplier: 0.8
 --- !u!114 &2081252382
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -38729,7 +38734,7 @@ MonoBehaviour:
   splitTime: 0.07
   splitCount: 5
   splitSpread: 15
-  splitDamageMultiplier: 0.6
+  splitDamageMultiplier: 0.8
 --- !u!114 &2081252383
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -38744,7 +38749,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ExplosiveModule
   explosionRadius: 5
   explosionDamage: 15
-  explosionEffectPrefab: {fileID: 2536517189527467608, guid: 4866be1635ae33c40a5aaf96ef6c2a08, type: 3}
+  explosionEffectPrefab: {fileID: 7562253074010408613, guid: 34cbfef6fe5df334caf51b20aa3f3c1b, type: 3}
 --- !u!114 &2081252384
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -38752,7 +38757,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2081252375}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 9b87209d9993d2347a649663e68807b9, type: 3}
   m_Name: 
@@ -38760,7 +38765,7 @@ MonoBehaviour:
   splitTime: 0.07
   splitCount: 5
   splitSpread: 15
-  splitDamageMultiplier: 0.6
+  splitDamageMultiplier: 0.8
 --- !u!114 &2081252385
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -38773,7 +38778,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2d39a8a9d5e507e4882793e022e44cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BounceModule
-  maxBounces: 3
+  maxBounces: 56
   applyEffectsOnBounce: 0
 --- !u!114 &2081252386
 MonoBehaviour:
@@ -38787,7 +38792,104 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e2edf6967c562d941a9f6257b273664f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::LobModule
-  lobAngle: 30
+  lobAngle: 45
+--- !u!82 &2081252388
+AudioSource:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2081252375}
+  m_Enabled: 1
+  serializedVersion: 4
+  OutputAudioMixerGroup: {fileID: 0}
+  m_audioClip: {fileID: 0}
+  m_Resource: {fileID: 0}
+  m_PlayOnAwake: 1
+  m_Volume: 0.645
+  m_Pitch: 1
+  Loop: 0
+  Mute: 0
+  Spatialize: 0
+  SpatializePostEffects: 0
+  Priority: 128
+  DopplerLevel: 1
+  MinDistance: 1
+  MaxDistance: 500
+  Pan2D: 0
+  rolloffMode: 0
+  BypassEffects: 0
+  BypassListenerEffects: 0
+  BypassReverbZones: 0
+  rolloffCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    - serializedVersion: 3
+      time: 1
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  panLevelCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  spreadCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  reverbZoneMixCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
 --- !u!1 &2083038024
 GameObject:
   m_ObjectHideFlags: 0

@@ -5,6 +5,7 @@ using UnityEngine;
 public class ShotProjectile : MonoBehaviour
 {
     [SerializeField] float lifetime = 5f;
+    [SerializeField] float maxRange = 200f;
 
     private ShotData shotData;
     private Rigidbody rb;
@@ -14,6 +15,7 @@ public class ShotProjectile : MonoBehaviour
     private bool hasSplit;
     private float despawnTime;
     private GameObject prefabSource;
+    private Vector3 spawnPosition;
 
     public void Init(ShotData data)
     {
@@ -28,6 +30,7 @@ public class ShotProjectile : MonoBehaviour
         splitTotalTime = data.GetProperty("splitTotalTime", 0f);
         splitFireTime = data.GetProperty("splitFireTime", 0f);
         despawnTime = Time.time + lifetime;
+        spawnPosition = transform.position;
 
         bool useGravity = data.GetProperty("useGravity", false);
         float lobAngle = data.GetProperty("lobAngle", 0f);
@@ -48,7 +51,7 @@ public class ShotProjectile : MonoBehaviour
     {
         if (shotData == null) return;
 
-        if (Time.time >= despawnTime)
+        if (Time.time >= despawnTime || Vector3.Distance(transform.position, spawnPosition) >= maxRange)
         {
             ReturnToPool();
             return;
@@ -104,6 +107,9 @@ public class ShotProjectile : MonoBehaviour
 
         shotData.SetProperty("bouncesLeft", bouncesLeft - 1);
 
+        if (shotData.weaponController != null)
+            shotData.weaponController.SpawnDecal(hit.point, hit.normal, hit.collider);
+
         bool applyOnBounce = shotData.GetProperty("applyEffectsOnBounce", false);
         if (applyOnBounce)
         {
@@ -129,13 +135,21 @@ public class ShotProjectile : MonoBehaviour
             hasHit = true;
 
             Vector3 contactPoint = other.ClosestPoint(transform.position);
-            Vector3 contactNormal = (transform.position - contactPoint).normalized;
+            Vector3 contactNormal = (transform.position - contactPoint);
+            if (contactNormal.sqrMagnitude < 0.0001f)
+                contactNormal = -rb.linearVelocity.normalized;
+            else
+                contactNormal = contactNormal.normalized;
             HitInfo info = new HitInfo(contactPoint, contactNormal, other);
 
             foreach (var callback in shotData.onHitCallbacks)
                 callback.Invoke(info, shotData);
 
             target.TakeDamage(shotData.damage, info);
+
+            if (shotData.weaponController != null)
+                shotData.weaponController.ShowHitFeedback(other);
+
             ReturnToPool();
             return;
         }
@@ -146,11 +160,18 @@ public class ShotProjectile : MonoBehaviour
         hasHit = true;
 
         Vector3 finalPoint = other.ClosestPoint(transform.position);
-        Vector3 finalNormal = (transform.position - finalPoint).normalized;
+        Vector3 finalNormal = (transform.position - finalPoint);
+        if (finalNormal.sqrMagnitude < 0.0001f)
+            finalNormal = -rb.linearVelocity.normalized;
+        else
+            finalNormal = finalNormal.normalized;
         HitInfo finalInfo = new HitInfo(finalPoint, finalNormal, other);
 
         foreach (var callback in shotData.onHitCallbacks)
             callback.Invoke(finalInfo, shotData);
+
+        if (shotData.weaponController != null)
+            shotData.weaponController.SpawnDecal(finalPoint, finalNormal, other);
 
         ReturnToPool();
     }

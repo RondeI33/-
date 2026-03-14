@@ -188,7 +188,7 @@ public class Doors : MonoBehaviour
 
         triggerOverlapCount++;
 
-        RoomActivator roomActivator = FindObjectOfType<RoomActivator>();
+        RoomActivator roomActivator = FindFirstObjectByType<RoomActivator>();
         if (roomActivator != null)
             roomActivator.OnPlayerEnteredRoom(gameObject);
 

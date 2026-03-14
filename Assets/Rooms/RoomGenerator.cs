@@ -13,7 +13,8 @@ public class RoomGenerator : MonoBehaviour
     [SerializeField] private GameObject[] treasureRoomPrefabs;
     [SerializeField] private GameObject bossRoomPrefab;
     [SerializeField] private LoadingScreenController loadingScreen;
-    [SerializeField] private int treasureRoomCount = 2;
+    [SerializeField] private int treasureRoomsOnMainPath = 2;
+    [SerializeField] private int treasureRoomsOnBranches = 0;
     [SerializeField] private float boundsShrink = 0.25f;
     [SerializeField] private int overlapWindow = 2;
     [SerializeField] private float connectionSnapThreshold = 0.5f;
@@ -38,6 +39,9 @@ public class RoomGenerator : MonoBehaviour
 
     private List<PlacedRoom> mainChain = new List<PlacedRoom>();
     private Dictionary<int, HashSet<int>> failedPrefabsPerStep = new Dictionary<int, HashSet<int>>();
+
+    // indices in the main chain (1-based, skipping start/tutorial) where treasure rooms should be placed
+    private HashSet<int> treasureInsertIndices = new HashSet<int>();
 
     private List<Bounds> GetMultiBounds(GameObject room)
     {
@@ -191,6 +195,20 @@ public class RoomGenerator : MonoBehaviour
         }
     }
 
+    // picks `count` unique random indices spread across [minIdx, maxIdx] (inclusive)
+    private HashSet<int> PickRandomIndices(int count, int minIdx, int maxIdx)
+    {
+        HashSet<int> result = new HashSet<int>();
+        if (maxIdx < minIdx || count <= 0) return result;
+
+        List<int> pool = new List<int>();
+        for (int i = minIdx; i <= maxIdx; i++) pool.Add(i);
+        Shuffle(pool);
+        for (int i = 0; i < Mathf.Min(count, pool.Count); i++)
+            result.Add(pool[i]);
+        return result;
+    }
+
     public IEnumerator Generate()
     {
         int totalRoomBudget = Random.Range(minRoomCount, maxRoomCount + 1);
@@ -223,6 +241,12 @@ public class RoomGenerator : MonoBehaviour
             ClearAll();
             placedMultiBounds.Add(startMultiBounds);
 
+            // pick random insertion points for main path treasure rooms
+            // skip index 0 (start) and leave the last 2 slots free for boss room buffer
+            int firstValidIdx = hasTutorialRoom ? 2 : 1;
+            int lastValidIdx = mainChainTarget - 3;
+            treasureInsertIndices = PickRandomIndices(treasureRoomsOnMainPath, firstValidIdx, lastValidIdx);
+
             Transform currentExit = startExit;
 
             if (hasTutorialRoom)
@@ -249,8 +273,6 @@ public class RoomGenerator : MonoBehaviour
 
             yield return StartCoroutine(BuildMainChain(mainChainTarget));
             if (!buildChainResult) continue;
-
-            yield return StartCoroutine(BuildTreasureRooms());
 
             yield return StartCoroutine(PlaceBossRoom());
             if (!buildChainResult) continue;
@@ -291,6 +313,35 @@ public class RoomGenerator : MonoBehaviour
             int step = mainChain.Count;
             Transform prevExit = GetLastMainExit();
 
+            // try placing a treasure room at this step if it was pre-selected
+            if (treasureInsertIndices.Contains(step) && treasureRoomPrefabs != null && treasureRoomPrefabs.Length > 0)
+            {
+                int newChainIndex = placedMultiBounds.Count;
+                List<int> treasureCandidates = new List<int>();
+                for (int p = 0; p < treasureRoomPrefabs.Length; p++) treasureCandidates.Add(p);
+                Shuffle(treasureCandidates);
+
+                bool treasurePlaced = false;
+                foreach (int prefabIndex in treasureCandidates)
+                {
+                    GameObject tRoom = Instantiate(treasureRoomPrefabs[prefabIndex], Vector3.zero, Quaternion.identity);
+                    Transform usedEntry;
+                    if (TryPlaceMainOnly(tRoom, prevExit, newChainIndex, out usedEntry))
+                    {
+                        tRoom.SetActive(false);
+                        placedMultiBounds.Add(GetMultiBounds(tRoom));
+                        mainChain.Add(new PlacedRoom { go = tRoom, usedEntry = usedEntry, prefabIndex = prefabIndex, isTreasure = true });
+                        allRooms.Add(tRoom);
+                        treasurePlaced = true;
+                        break;
+                    }
+                    Destroy(tRoom);
+                }
+
+                // if treasure couldn't fit, just skip it and continue with normal room
+                if (treasurePlaced) { yield return null; continue; }
+            }
+
             if (!failedPrefabsPerStep.ContainsKey(step))
                 failedPrefabsPerStep[step] = new HashSet<int>();
             HashSet<int> failedHere = failedPrefabsPerStep[step];
@@ -321,14 +372,14 @@ public class RoomGenerator : MonoBehaviour
                 if (!failedHere.Contains(p)) candidates.Add(p);
             Shuffle(candidates);
 
-            int newChainIndex = placedMultiBounds.Count;
+            int newIdx = placedMultiBounds.Count;
             bool placed = false;
 
             foreach (int prefabIndex in candidates)
             {
                 GameObject newRoom = Instantiate(roomPrefabs[prefabIndex], Vector3.zero, Quaternion.identity);
                 Transform usedEntry;
-                if (TryPlaceMainOnly(newRoom, prevExit, newChainIndex, out usedEntry))
+                if (TryPlaceMainOnly(newRoom, prevExit, newIdx, out usedEntry))
                 {
                     newRoom.SetActive(false);
                     placedMultiBounds.Add(GetMultiBounds(newRoom));
@@ -346,73 +397,6 @@ public class RoomGenerator : MonoBehaviour
         }
 
         buildChainResult = true;
-    }
-
-    private IEnumerator BuildTreasureRooms()
-    {
-        int placed = 0;
-        int maxSpacers = 10;
-
-        while (placed < treasureRoomCount)
-        {
-            bool treasurePlaced = false;
-            Transform prevExit = GetLastMainExit();
-            int newChainIndex = placedMultiBounds.Count;
-
-            List<int> candidates = new List<int>();
-            for (int p = 0; p < treasureRoomPrefabs.Length; p++) candidates.Add(p);
-            Shuffle(candidates);
-
-            foreach (int prefabIndex in candidates)
-            {
-                GameObject newRoom = Instantiate(treasureRoomPrefabs[prefabIndex], Vector3.zero, Quaternion.identity);
-                Transform usedEntry;
-                if (TryPlaceMainOnly(newRoom, prevExit, newChainIndex, out usedEntry))
-                {
-                    newRoom.SetActive(false);
-                    placedMultiBounds.Add(GetMultiBounds(newRoom));
-                    mainChain.Add(new PlacedRoom { go = newRoom, usedEntry = usedEntry, prefabIndex = prefabIndex, isTreasure = true });
-                    allRooms.Add(newRoom);
-                    treasurePlaced = true;
-                    placed++;
-                    break;
-                }
-                Destroy(newRoom);
-            }
-
-            if (!treasurePlaced)
-            {
-                bool spacerPlaced = false;
-                int attempts = 0;
-                while (!spacerPlaced && attempts < maxSpacers)
-                {
-                    attempts++;
-                    prevExit = GetLastMainExit();
-                    newChainIndex = placedMultiBounds.Count;
-                    List<int> spacers = new List<int>();
-                    for (int p = 0; p < roomPrefabs.Length; p++) spacers.Add(p);
-                    Shuffle(spacers);
-                    foreach (int prefabIndex in spacers)
-                    {
-                        GameObject spacer = Instantiate(roomPrefabs[prefabIndex], Vector3.zero, Quaternion.identity);
-                        Transform usedEntry;
-                        if (TryPlaceMainOnly(spacer, prevExit, newChainIndex, out usedEntry))
-                        {
-                            spacer.SetActive(false);
-                            placedMultiBounds.Add(GetMultiBounds(spacer));
-                            mainChain.Add(new PlacedRoom { go = spacer, usedEntry = usedEntry, prefabIndex = prefabIndex });
-                            allRooms.Add(spacer);
-                            spacerPlaced = true;
-                            break;
-                        }
-                        Destroy(spacer);
-                    }
-                    yield return null;
-                }
-                if (!spacerPlaced) yield break;
-            }
-            yield return null;
-        }
     }
 
     private IEnumerator PlaceBossRoom()
@@ -464,6 +448,7 @@ public class RoomGenerator : MonoBehaviour
     private IEnumerator BuildBranchesRecursive(int budget)
     {
         int roomsLeft = budget;
+        int branchTreasuresLeft = treasureRoomsOnBranches;
         Queue<BranchTask> branchQueue = new Queue<BranchTask>();
 
         for (int i = 0; i < mainChain.Count; i++)
@@ -475,38 +460,80 @@ public class RoomGenerator : MonoBehaviour
                 branchQueue.Enqueue(new BranchTask { exitPoint = openPts[j], parentBoundsIdx = boundsIdx });
         }
 
+        // collect all branch queue positions so we can pick random ones for treasure
+        // we decide per-slot with probability to place a treasure room when budget allows
         while (branchQueue.Count > 0 && roomsLeft > 0)
         {
             BranchTask task = branchQueue.Dequeue();
 
-            List<int> candidates = new List<int>();
-            for (int p = 0; p < roomPrefabs.Length; p++) candidates.Add(p);
-            Shuffle(candidates);
+            // randomly decide to place a treasure room on this branch slot
+            bool tryTreasureHere = branchTreasuresLeft > 0
+                && treasureRoomPrefabs != null
+                && treasureRoomPrefabs.Length > 0
+                && Random.Range(0, branchQueue.Count + 1) < branchTreasuresLeft;
 
-            foreach (int prefabIndex in candidates)
+            if (tryTreasureHere)
             {
-                GameObject newRoom = Instantiate(roomPrefabs[prefabIndex], Vector3.zero, Quaternion.identity);
-                Transform usedEntry;
-                if (TryPlaceBranch(newRoom, task.exitPoint, task.parentBoundsIdx, out usedEntry))
+                List<int> tCandidates = new List<int>();
+                for (int p = 0; p < treasureRoomPrefabs.Length; p++) tCandidates.Add(p);
+                Shuffle(tCandidates);
+
+                foreach (int prefabIndex in tCandidates)
                 {
-                    newRoom.SetActive(false);
-                    int newBoundsIdx = placedMultiBounds.Count;
-                    placedMultiBounds.Add(GetMultiBounds(newRoom));
-                    allRooms.Add(newRoom);
-                    roomsLeft--;
-
-                    if (roomsLeft > 0)
+                    GameObject tRoom = Instantiate(treasureRoomPrefabs[prefabIndex], Vector3.zero, Quaternion.identity);
+                    Transform usedEntry;
+                    if (TryPlaceBranch(tRoom, task.exitPoint, task.parentBoundsIdx, out usedEntry))
                     {
-                        List<Transform> openPts = GetOpenConnectionPoints(newRoom, usedEntry);
-                        for (int j = 0; j < openPts.Count; j++)
-                            branchQueue.Enqueue(new BranchTask { exitPoint = openPts[j], parentBoundsIdx = newBoundsIdx });
-                    }
+                        tRoom.SetActive(false);
+                        int newBoundsIdx = placedMultiBounds.Count;
+                        placedMultiBounds.Add(GetMultiBounds(tRoom));
+                        allRooms.Add(tRoom);
+                        roomsLeft--;
+                        branchTreasuresLeft--;
 
-                    break;
+                        if (roomsLeft > 0)
+                        {
+                            List<Transform> openPts = GetOpenConnectionPoints(tRoom, usedEntry);
+                            for (int j = 0; j < openPts.Count; j++)
+                                branchQueue.Enqueue(new BranchTask { exitPoint = openPts[j], parentBoundsIdx = newBoundsIdx });
+                        }
+                        goto nextTask;
+                    }
+                    Destroy(tRoom);
                 }
-                Destroy(newRoom);
             }
 
+            {
+                List<int> candidates = new List<int>();
+                for (int p = 0; p < roomPrefabs.Length; p++) candidates.Add(p);
+                Shuffle(candidates);
+
+                foreach (int prefabIndex in candidates)
+                {
+                    GameObject newRoom = Instantiate(roomPrefabs[prefabIndex], Vector3.zero, Quaternion.identity);
+                    Transform usedEntry;
+                    if (TryPlaceBranch(newRoom, task.exitPoint, task.parentBoundsIdx, out usedEntry))
+                    {
+                        newRoom.SetActive(false);
+                        int newBoundsIdx = placedMultiBounds.Count;
+                        placedMultiBounds.Add(GetMultiBounds(newRoom));
+                        allRooms.Add(newRoom);
+                        roomsLeft--;
+
+                        if (roomsLeft > 0)
+                        {
+                            List<Transform> openPts = GetOpenConnectionPoints(newRoom, usedEntry);
+                            for (int j = 0; j < openPts.Count; j++)
+                                branchQueue.Enqueue(new BranchTask { exitPoint = openPts[j], parentBoundsIdx = newBoundsIdx });
+                        }
+
+                        break;
+                    }
+                    Destroy(newRoom);
+                }
+            }
+
+        nextTask:
             yield return null;
         }
     }
@@ -549,6 +576,7 @@ public class RoomGenerator : MonoBehaviour
         }
 
         room.SetActive(wasActive);
+        Shuffle(points);
         return points;
     }
 
@@ -650,6 +678,7 @@ public class RoomGenerator : MonoBehaviour
         mainChain.Clear();
         placedMultiBounds.Clear();
         failedPrefabsPerStep.Clear();
+        treasureInsertIndices.Clear();
     }
 
     public void ClearRooms()
