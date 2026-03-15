@@ -11,17 +11,14 @@ public class HudPopUps : MonoBehaviour
     [SerializeField] private float fadeDuration = 0.5f;
     [SerializeField] private float scaleBoost = 1.3f;
     [SerializeField] private PlayerHealth playerHealth;
-    [SerializeField] private CoinThrow coinThrow;
 
     private PopupState healthAdd;
     private PopupState healthRemove;
     private PopupState ammoAdd;
     private PopupState ammoRemove;
 
-    private float lastHealth;
     private int lastDisplayedHealth;
     private int lastAmmo;
-    private WeaponRecoil cachedRecoil;
     private bool healthInitialized;
 
     private struct PopupState
@@ -39,6 +36,22 @@ public class HudPopUps : MonoBehaviour
 
         if (playerHealth)
             playerHealth.OnHealthChanged += HandleHealthChanged;
+
+        WeaponReloadController.OnAnyAmmoChanged += HandleAmmoChanged;
+        WeaponReloadController.OnAnyReloadStart += HandleReloadStart;
+
+        WeaponReloadController existing = FindFirstObjectByType<WeaponReloadController>();
+        if (existing != null)
+            lastAmmo = existing.GetCurrentAmmo();
+    }
+
+    private void OnDestroy()
+    {
+        if (playerHealth)
+            playerHealth.OnHealthChanged -= HandleHealthChanged;
+
+        WeaponReloadController.OnAnyAmmoChanged -= HandleAmmoChanged;
+        WeaponReloadController.OnAnyReloadStart -= HandleReloadStart;
     }
 
     private Vector3 InitText(TMP_Text text)
@@ -50,15 +63,8 @@ public class HudPopUps : MonoBehaviour
         return text.transform.localScale;
     }
 
-    private void OnDestroy()
-    {
-        if (playerHealth)
-            playerHealth.OnHealthChanged -= HandleHealthChanged;
-    }
-
     private void Update()
     {
-        TrackAmmo();
         UpdateFade(healthAddText, ref healthAdd);
         UpdateFade(healthRemoveText, ref healthRemove);
         UpdateFade(ammoAddText, ref ammoAdd);
@@ -70,14 +76,12 @@ public class HudPopUps : MonoBehaviour
         if (!healthInitialized)
         {
             healthInitialized = true;
-            lastHealth = current;
             lastDisplayedHealth = Mathf.CeilToInt(current);
             return;
         }
 
         int currentInt = Mathf.CeilToInt(current);
         int delta = currentInt - lastDisplayedHealth;
-        lastHealth = current;
 
         if (delta == 0) return;
 
@@ -89,22 +93,22 @@ public class HudPopUps : MonoBehaviour
             ShowPopup(healthRemoveText, ref healthRemove, $"-{Mathf.Abs(delta)}");
     }
 
-    private void TrackAmmo()
+    private void HandleReloadStart(int ammoBeforeReload)
     {
-        WeaponRecoil wr = GetActiveRecoil();
-        if (!wr) return;
+        lastAmmo = ammoBeforeReload;
+    }
 
-        int current = wr.GetCurrentAmmo();
-        if (current != lastAmmo)
-        {
-            int delta = current - lastAmmo;
-            lastAmmo = current;
+    private void HandleAmmoChanged(int current, int max)
+    {
+        int delta = current - lastAmmo;
+        lastAmmo = current;
 
-            if (delta > 0)
-                ShowPopup(ammoAddText, ref ammoAdd, $"+{delta}");
-            else
-                ShowPopup(ammoRemoveText, ref ammoRemove, $"{delta}");
-        }
+        if (delta == 0) return;
+
+        if (delta > 0)
+            ShowPopup(ammoAddText, ref ammoAdd, $"+{delta}");
+        else
+            ShowPopup(ammoRemoveText, ref ammoRemove, $"{delta}");
     }
 
     private void ShowPopup(TMP_Text text, ref PopupState state, string value)
@@ -114,17 +118,6 @@ public class HudPopUps : MonoBehaviour
         SetAlpha(text, 1f);
         text.transform.localScale = state.baseScale * scaleBoost;
         state.timer = displayDuration + fadeDuration;
-    }
-
-    private WeaponRecoil GetActiveRecoil()
-    {
-        if (cachedRecoil && cachedRecoil.gameObject.activeInHierarchy)
-            return cachedRecoil;
-
-        cachedRecoil = coinThrow ? coinThrow.GetComponentInChildren<WeaponRecoil>() : null;
-        if (cachedRecoil)
-            lastAmmo = cachedRecoil.GetCurrentAmmo();
-        return cachedRecoil;
     }
 
     private void UpdateFade(TMP_Text text, ref PopupState state)

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+ï»¿using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using Random = UnityEngine.Random;
@@ -23,6 +23,9 @@ public class WeaponController : MonoBehaviour
         new Color(1f, 1f, 0.3f, 1f)
     };
 
+    [Header("Weakpoint")]
+    [SerializeField] float weakpointMultiplier = 2f;
+
     [Header("Hit Feedback")]
     [SerializeField] private AudioSource hitAudioSource;
     [SerializeField] private AudioClip hitSound;
@@ -39,9 +42,10 @@ public class WeaponController : MonoBehaviour
     private Material[] decalMats;
     private DecalFade[] decalFaders;
     private int decalIndex;
-    private int renderQueue = 3001;
     private float nextFireTime;
+    private bool reloadBlocked;
     private Dictionary<GameObject, Queue<GameObject>> projectilePools = new Dictionary<GameObject, Queue<GameObject>>();
+    public System.Action OnFired;
 
     void Start()
     {
@@ -68,7 +72,7 @@ public class WeaponController : MonoBehaviour
             ? attackAction.IsPressed()
             : attackAction.WasPressedThisFrame();
 
-        if (wantsFire && Time.time >= nextFireTime)
+        if (!reloadBlocked && wantsFire && Time.time >= nextFireTime)
         {
             nextFireTime = Time.time + fireRate;
             Fire();
@@ -91,7 +95,7 @@ public class WeaponController : MonoBehaviour
         Vector3 toFirePoint = firePoint.position - camPos;
         float dist = toFirePoint.magnitude;
 
-        // Cast from camera toward firepoint — if a wall is in between, the barrel has clipped through it
+        // Cast from camera toward firepoint ï¿½ if a wall is in between, the barrel has clipped through it
         if (Physics.Raycast(camPos, toFirePoint.normalized, out RaycastHit hit, dist, hitLayers))
             return hit.point + hit.normal * 0.05f;
 
@@ -139,6 +143,7 @@ public class WeaponController : MonoBehaviour
 
         allShots = RunPipeline(allShots);
         ExecuteShots(allShots);
+        OnFired?.Invoke();
     }
 
     public void FireSecondary(List<ShotData> shots)
@@ -151,6 +156,18 @@ public class WeaponController : MonoBehaviour
 
         shots = RunPipeline(shots);
         ExecuteShots(shots);
+    }
+
+    public float ApplyDamageModifier(float damage, Collider col)
+    {
+        if (col.CompareTag("IgnoreDamage")) return 0f;
+        if (col.CompareTag("Weakpoint")) return damage * weakpointMultiplier;
+        return damage;
+    }
+
+    public void SetReloadBlocked(bool blocked)
+    {
+        reloadBlocked = blocked;
     }
 
     public Transform GetFirePoint()
@@ -217,7 +234,8 @@ public class WeaponController : MonoBehaviour
                 foreach (var callback in shot.onHitCallbacks)
                     callback.Invoke(info, shot);
 
-                target.TakeDamage(shot.damage, info);
+                float dmg = ApplyDamageModifier(shot.damage, hit.collider);
+                target.TakeDamage(dmg, info);
                 ShowHitFeedback(hit.collider);
                 break;
             }
@@ -314,6 +332,28 @@ public class WeaponController : MonoBehaviour
             }
         }
     }
+    public void ShowHitFeedback(Collider hitCollider, bool playSound = true)
+    {
+        bool isWeakpoint = hitCollider.CompareTag("Weakpoint");
+        bool isBlocking = hitCollider.CompareTag("IgnoreDamage");
+
+        if (isBlocking)
+        {
+            if (immunePopUp)
+                immunePopUp.ShowHit(isWeakpoint);
+        }
+        else
+        {
+            if (hitPopUp)
+                hitPopUp.ShowHit(isWeakpoint);
+            if (playSound && hitAudioSource && hitSound)
+            {
+                hitAudioSource.pitch = Random.Range(hitPitchMin, hitPitchMax);
+                hitAudioSource.clip = hitSound;
+                hitAudioSource.Play();
+            }
+        }
+    }
 
     void SpawnDecal(RaycastHit hit)
     {
@@ -345,10 +385,7 @@ public class WeaponController : MonoBehaviour
 
         Color color = hitColors[Random.Range(0, hitColors.Length)];
         decalMats[decalIndex].SetColor("_BaseColor", color);
-        decalMats[decalIndex].renderQueue = renderQueue;
-        renderQueue++;
-        if (renderQueue >= 4000)
-            renderQueue = 3001;
+
 
         Transform target = col.transform;
         Vector3 localPos = target.InverseTransformPoint(position);

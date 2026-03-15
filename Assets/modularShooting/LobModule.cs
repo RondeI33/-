@@ -4,6 +4,7 @@ using UnityEngine;
 public class LobModule : MonoBehaviour, IShotModifier
 {
     [SerializeField] float lobAngle = 30f;
+    [SerializeField] float wallCheckDistance = 4f;
 
     public List<ShotData> ProcessShots(List<ShotData> shots)
     {
@@ -15,8 +16,12 @@ public class LobModule : MonoBehaviour, IShotModifier
             if (shot.HasAppliedModifier(myId)) continue;
 
             shot.MarkModifierApplied(myId);
-            shot.SetProperty("useGravity", true);
 
+            
+            if (Physics.Raycast(shot.origin, shot.direction.normalized, wallCheckDistance, shot.hitLayers))
+                continue;
+
+            shot.SetProperty("useGravity", true);
             float existing = shot.GetProperty("lobAngle", 0f);
             shot.SetProperty("lobAngle", existing + lobAngle);
         }

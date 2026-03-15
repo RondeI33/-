@@ -21,7 +21,6 @@ public class ExplosiveModule : MonoBehaviour, IShotModifier
 
             float existingRadius = shot.GetProperty("explosionRadius", 0f);
             float existingDmg = shot.GetProperty("explosionDamage", 0f);
-
             shot.SetProperty("explosionRadius", existingRadius + radius);
             shot.SetProperty("explosionDamage", existingDmg + dmg);
 
@@ -39,19 +38,18 @@ public class ExplosiveModule : MonoBehaviour, IShotModifier
                     foreach (Collider col in hits)
                     {
                         if (col == info.collider) continue;
-
                         IDamageable target = col.GetComponentInParent<IDamageable>();
                         if (target != null)
                         {
                             Vector3 closestPoint = col.ClosestPoint(info.point);
                             Vector3 normal = (closestPoint - info.point).normalized;
                             target.TakeDamage(d, new HitInfo(closestPoint, normal, col));
+                            data.weaponController?.ShowHitFeedback(col, true);          //change to false or change the hit sound 
                         }
                     }
                 });
             }
         }
-
         return shots;
     }
 }

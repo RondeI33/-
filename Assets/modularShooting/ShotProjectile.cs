@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -16,6 +17,14 @@ public class ShotProjectile : MonoBehaviour
     private float despawnTime;
     private GameObject prefabSource;
     private Vector3 spawnPosition;
+
+    private TrailRenderer[] trails;
+
+    void Awake()
+    {
+        rb = GetComponent<Rigidbody>();
+        trails = GetComponentsInChildren<TrailRenderer>();
+    }
 
     public void Init(ShotData data)
     {
@@ -40,11 +49,29 @@ public class ShotProjectile : MonoBehaviour
         Vector3 velocity = data.direction.normalized * data.speed;
 
         if (useGravity && lobAngle > 0f)
-        {
             velocity = Quaternion.AngleAxis(-lobAngle, transform.right) * velocity;
-        }
 
         rb.linearVelocity = velocity;
+
+        if (trails.Length > 0)
+            StartCoroutine(ClearTrailsNextFrame());
+    }
+
+    private IEnumerator ClearTrailsNextFrame()
+    {
+        foreach (var trail in trails)
+        {
+            trail.emitting = false;
+            trail.Clear();
+        }
+
+        yield return null;
+
+        foreach (var trail in trails)
+        {
+            trail.Clear();
+            trail.emitting = true;
+        }
     }
 
     void Update()
@@ -85,9 +112,6 @@ public class ShotProjectile : MonoBehaviour
     {
         if (hasHit || shotData == null) return;
 
-        int bouncesLeft = shotData.GetProperty("bouncesLeft", 0);
-        if (bouncesLeft <= 0) return;
-
         Vector3 vel = rb.linearVelocity;
         float speed = vel.magnitude;
         if (speed < 0.01f) return;
@@ -98,81 +122,75 @@ public class ShotProjectile : MonoBehaviour
         if (!Physics.Raycast(transform.position, dir, out RaycastHit hit, lookAhead, shotData.hitLayers))
             return;
 
-        if (hit.collider.GetComponentInParent<IDamageable>() != null)
-            return;
+        IDamageable target = hit.collider.GetComponentInParent<IDamageable>();
+        int bouncesLeft = shotData.GetProperty("bouncesLeft", 0);
 
-        Vector3 reflected = Vector3.Reflect(dir, hit.normal);
-        rb.linearVelocity = reflected * speed;
-        transform.position = hit.point + hit.normal * 0.05f;
-
-        shotData.SetProperty("bouncesLeft", bouncesLeft - 1);
-
-        if (shotData.weaponController != null)
-            shotData.weaponController.SpawnDecal(hit.point, hit.normal, hit.collider);
-
-        bool applyOnBounce = shotData.GetProperty("applyEffectsOnBounce", false);
-        if (applyOnBounce)
+        if (target != null)
         {
+            hasHit = true;
             HitInfo info = new HitInfo(hit.point, hit.normal, hit.collider);
-
             foreach (var callback in shotData.onHitCallbacks)
                 callback.Invoke(info, shotData);
+            float dmg = shotData.weaponController != null
+                ? shotData.weaponController.ApplyDamageModifier(shotData.damage, hit.collider)
+                : shotData.damage;
+            target.TakeDamage(dmg, info);
+            shotData.weaponController?.ShowHitFeedback(hit.collider);
+            ReturnToPool();
+            return;
         }
+
+        if (bouncesLeft > 0)
+        {
+            Vector3 reflected = Vector3.Reflect(dir, hit.normal);
+            rb.linearVelocity = reflected * speed;
+            transform.position = hit.point + hit.normal * 0.05f;
+            shotData.SetProperty("bouncesLeft", bouncesLeft - 1);
+            shotData.weaponController?.SpawnDecal(hit.point, hit.normal, hit.collider);
+
+            bool applyOnBounce = shotData.GetProperty("applyEffectsOnBounce", false);
+            if (applyOnBounce)
+            {
+                HitInfo info = new HitInfo(hit.point, hit.normal, hit.collider);
+                foreach (var callback in shotData.onHitCallbacks)
+                    callback.Invoke(info, shotData);
+            }
+            return;
+        }
+
+        hasHit = true;
+        HitInfo finalInfo = new HitInfo(hit.point, hit.normal, hit.collider);
+        WeaponController wc = shotData.weaponController;
+        wc?.SpawnDecal(hit.point, hit.normal, hit.collider);
+        foreach (var callback in shotData.onHitCallbacks)
+            callback.Invoke(finalInfo, shotData);
+        ReturnToPool();
     }
 
     void OnTriggerEnter(Collider other)
     {
-        if (hasHit) return;
-        if (shotData == null) return;
+        if (hasHit || shotData == null) return;
 
         int otherLayer = 1 << other.gameObject.layer;
         if ((shotData.hitLayers.value & otherLayer) == 0) return;
 
         IDamageable target = other.GetComponentInParent<IDamageable>();
-
-        if (target != null)
-        {
-            hasHit = true;
-
-            Vector3 contactPoint = other.ClosestPoint(transform.position);
-            Vector3 contactNormal = (transform.position - contactPoint);
-            if (contactNormal.sqrMagnitude < 0.0001f)
-                contactNormal = -rb.linearVelocity.normalized;
-            else
-                contactNormal = contactNormal.normalized;
-            HitInfo info = new HitInfo(contactPoint, contactNormal, other);
-
-            foreach (var callback in shotData.onHitCallbacks)
-                callback.Invoke(info, shotData);
-
-            target.TakeDamage(shotData.damage, info);
-
-            if (shotData.weaponController != null)
-                shotData.weaponController.ShowHitFeedback(other);
-
-            ReturnToPool();
-            return;
-        }
-
-        int bouncesLeft = shotData.GetProperty("bouncesLeft", 0);
-        if (bouncesLeft > 0) return;
+        if (target == null) return;
 
         hasHit = true;
 
-        Vector3 finalPoint = other.ClosestPoint(transform.position);
-        Vector3 finalNormal = (transform.position - finalPoint);
-        if (finalNormal.sqrMagnitude < 0.0001f)
-            finalNormal = -rb.linearVelocity.normalized;
-        else
-            finalNormal = finalNormal.normalized;
-        HitInfo finalInfo = new HitInfo(finalPoint, finalNormal, other);
+        Vector3 contactPoint = other.ClosestPoint(transform.position);
+        Vector3 contactNormal = (transform.position - contactPoint);
+        contactNormal = contactNormal.sqrMagnitude < 0.0001f ? -rb.linearVelocity.normalized : contactNormal.normalized;
 
+        HitInfo info = new HitInfo(contactPoint, contactNormal, other);
         foreach (var callback in shotData.onHitCallbacks)
-            callback.Invoke(finalInfo, shotData);
-
-        if (shotData.weaponController != null)
-            shotData.weaponController.SpawnDecal(finalPoint, finalNormal, other);
-
+            callback.Invoke(info, shotData);
+        float dmg = shotData.weaponController != null
+            ? shotData.weaponController.ApplyDamageModifier(shotData.damage, other)
+            : shotData.damage;
+        target.TakeDamage(dmg, info);
+        shotData.weaponController?.ShowHitFeedback(other);
         ReturnToPool();
     }
 
@@ -180,6 +198,12 @@ public class ShotProjectile : MonoBehaviour
     {
         rb.linearVelocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
+
+        foreach (var trail in trails)
+        {
+            trail.emitting = false;
+            trail.Clear();
+        }
 
         if (shotData != null && shotData.weaponController != null && prefabSource != null)
             shotData.weaponController.ReturnToPool(gameObject, prefabSource);
