@@ -19,15 +19,20 @@ public class ProjectileShooter : MonoBehaviour, IFireSource
     public List<ShotData> CreateShots(int sourceIndex, int totalSources)
     {
         Transform fp = controller.GetFirePoint();
-
         Vector3 dir = controller.GetAimDirection();
 
-        if (totalSources > 1)
+        if (totalSources > 1 && sourceIndex > 0)
         {
-            float t = (sourceIndex / (float)(totalSources - 1)) * 2f - 1f;
-            float angle = t * spreadAngle * (totalSources - 1) * 0.5f;
-            dir = Quaternion.AngleAxis(angle, Vector3.up) * dir;
+            Vector3 perp = Vector3.Cross(dir, Vector3.up);
+            if (perp.sqrMagnitude < 0.01f)
+                perp = Vector3.Cross(dir, Vector3.right);
+            perp.Normalize();
+
+            float randomAngle = Random.Range(0f, 360f);
+            perp = Quaternion.AngleAxis(randomAngle, dir) * perp;
+            dir = Quaternion.AngleAxis(spreadAngle, perp) * dir;
         }
+
 
         ShotData shot = new ShotData
         {
@@ -39,7 +44,6 @@ public class ProjectileShooter : MonoBehaviour, IFireSource
             isRaycast = false,
             projectilePrefab = projectilePrefab
         };
-
         return new List<ShotData> { shot };
     }
 }

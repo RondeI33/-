@@ -7,6 +7,9 @@ public class ShotProjectile : MonoBehaviour
 {
     [SerializeField] float lifetime = 5f;
     [SerializeField] float maxRange = 200f;
+    [SerializeField] float speedTrailThreshold = 167f;
+    [SerializeField] Color speedTrailColor = new Color(1f, 0.85f, 0.3f, 1f);
+    [SerializeField] float speedTrailFadeTime = 0.4f;
 
     private ShotData shotData;
     private Rigidbody rb;
@@ -19,6 +22,10 @@ public class ShotProjectile : MonoBehaviour
     private Vector3 spawnPosition;
 
     private TrailRenderer[] trails;
+    private bool useSpeedTrail;
+    private Vector3 trailSegmentStart;
+    private AnimationCurve trailWidthCurve;
+    private float trailWidthMultiplier;
 
     void Awake()
     {
@@ -40,6 +47,25 @@ public class ShotProjectile : MonoBehaviour
         splitFireTime = data.GetProperty("splitFireTime", 0f);
         despawnTime = Time.time + lifetime;
         spawnPosition = transform.position;
+
+        useSpeedTrail = data.speed > speedTrailThreshold;
+        trailSegmentStart = spawnPosition;
+
+        if (useSpeedTrail && trails.Length > 0)
+        {
+            TrailRenderer src = trails[0];
+            AnimationCurve original = src.widthCurve;
+            trailWidthMultiplier = src.widthMultiplier;
+
+            Keyframe[] keys = original.keys;
+            Keyframe[] reversed = new Keyframe[keys.Length];
+            for (int i = 0; i < keys.Length; i++)
+            {
+                Keyframe k = keys[keys.Length - 1 - i];
+                reversed[i] = new Keyframe(1f - k.time, k.value, -k.outTangent, -k.inTangent);
+            }
+            trailWidthCurve = new AnimationCurve(reversed);
+        }
 
         bool useGravity = data.GetProperty("useGravity", false);
         float lobAngle = data.GetProperty("lobAngle", 0f);
@@ -74,12 +100,19 @@ public class ShotProjectile : MonoBehaviour
         }
     }
 
+    private void SpawnTrailSegment(Vector3 from, Vector3 to)
+    {
+        if (!useSpeedTrail) return;
+        SpeedTrail.Spawn(from, to, trailWidthCurve, trailWidthMultiplier, speedTrailFadeTime, speedTrailColor);
+    }
+
     void Update()
     {
         if (shotData == null) return;
 
         if (Time.time >= despawnTime || Vector3.Distance(transform.position, spawnPosition) >= maxRange)
         {
+            SpawnTrailSegment(trailSegmentStart, transform.position);
             ReturnToPool();
             return;
         }
@@ -105,6 +138,7 @@ public class ShotProjectile : MonoBehaviour
             shotData.weaponController.FireSecondary(fragments);
         }
 
+        SpawnTrailSegment(trailSegmentStart, transform.position);
         ReturnToPool();
     }
 
@@ -117,54 +151,75 @@ public class ShotProjectile : MonoBehaviour
         if (speed < 0.01f) return;
 
         Vector3 dir = vel / speed;
-        float lookAhead = speed * Time.fixedDeltaTime + 0.1f;
-
-        if (!Physics.Raycast(transform.position, dir, out RaycastHit hit, lookAhead, shotData.hitLayers))
-            return;
-
-        IDamageable target = hit.collider.GetComponentInParent<IDamageable>();
+        float frameDist = speed * Time.fixedDeltaTime + 0.1f;
+        float remainingDist = frameDist;
+        Vector3 origin = transform.position;
         int bouncesLeft = shotData.GetProperty("bouncesLeft", 0);
+        bool bounced = false;
 
-        if (target != null)
+        while (remainingDist > 0f)
         {
+            if (!Physics.Raycast(origin, dir, out RaycastHit hit, remainingDist, shotData.hitLayers))
+                break;
+
+            IDamageable target = hit.collider.GetComponentInParent<IDamageable>();
+
+            if (target != null)
+            {
+                hasHit = true;
+                SpawnTrailSegment(trailSegmentStart, hit.point);
+                HitInfo info = new HitInfo(hit.point, hit.normal, hit.collider);
+                foreach (var callback in shotData.onHitCallbacks)
+                    callback.Invoke(info, shotData);
+                float dmg = shotData.weaponController != null
+                    ? shotData.weaponController.ApplyDamageModifier(shotData.damage, hit.collider)
+                    : shotData.damage;
+                target.TakeDamage(dmg, info);
+                shotData.weaponController?.ShowHitFeedback(hit.collider);
+                ReturnToPool();
+                return;
+            }
+
+            if (bouncesLeft > 0)
+            {
+                SpawnTrailSegment(trailSegmentStart, hit.point);
+                trailSegmentStart = hit.point;
+
+                shotData.weaponController?.SpawnDecal(hit.point, hit.normal, hit.collider);
+
+                bool applyOnBounce = shotData.GetProperty("applyEffectsOnBounce", false);
+                if (applyOnBounce)
+                {
+                    HitInfo info = new HitInfo(hit.point, hit.normal, hit.collider);
+                    foreach (var callback in shotData.onHitCallbacks)
+                        callback.Invoke(info, shotData);
+                }
+
+                dir = Vector3.Reflect(dir, hit.normal);
+                origin = hit.point + hit.normal * 0.05f;
+                bouncesLeft--;
+                bounced = true;
+                remainingDist = frameDist;
+                continue;
+            }
+
             hasHit = true;
-            HitInfo info = new HitInfo(hit.point, hit.normal, hit.collider);
+            SpawnTrailSegment(trailSegmentStart, hit.point);
+            HitInfo finalInfo = new HitInfo(hit.point, hit.normal, hit.collider);
+            shotData.weaponController?.SpawnDecal(hit.point, hit.normal, hit.collider);
             foreach (var callback in shotData.onHitCallbacks)
-                callback.Invoke(info, shotData);
-            float dmg = shotData.weaponController != null
-                ? shotData.weaponController.ApplyDamageModifier(shotData.damage, hit.collider)
-                : shotData.damage;
-            target.TakeDamage(dmg, info);
-            shotData.weaponController?.ShowHitFeedback(hit.collider);
+                callback.Invoke(finalInfo, shotData);
             ReturnToPool();
             return;
         }
 
-        if (bouncesLeft > 0)
+        if (bounced)
         {
-            Vector3 reflected = Vector3.Reflect(dir, hit.normal);
-            rb.linearVelocity = reflected * speed;
-            transform.position = hit.point + hit.normal * 0.05f;
-            shotData.SetProperty("bouncesLeft", bouncesLeft - 1);
-            shotData.weaponController?.SpawnDecal(hit.point, hit.normal, hit.collider);
-
-            bool applyOnBounce = shotData.GetProperty("applyEffectsOnBounce", false);
-            if (applyOnBounce)
-            {
-                HitInfo info = new HitInfo(hit.point, hit.normal, hit.collider);
-                foreach (var callback in shotData.onHitCallbacks)
-                    callback.Invoke(info, shotData);
-            }
-            return;
+            shotData.SetProperty("bouncesLeft", bouncesLeft);
+            transform.position = origin;
+            rb.linearVelocity = dir * speed;
+            trailSegmentStart = origin;
         }
-
-        hasHit = true;
-        HitInfo finalInfo = new HitInfo(hit.point, hit.normal, hit.collider);
-        WeaponController wc = shotData.weaponController;
-        wc?.SpawnDecal(hit.point, hit.normal, hit.collider);
-        foreach (var callback in shotData.onHitCallbacks)
-            callback.Invoke(finalInfo, shotData);
-        ReturnToPool();
     }
 
     void OnTriggerEnter(Collider other)
@@ -182,6 +237,8 @@ public class ShotProjectile : MonoBehaviour
         Vector3 contactPoint = other.ClosestPoint(transform.position);
         Vector3 contactNormal = (transform.position - contactPoint);
         contactNormal = contactNormal.sqrMagnitude < 0.0001f ? -rb.linearVelocity.normalized : contactNormal.normalized;
+
+        SpawnTrailSegment(trailSegmentStart, contactPoint);
 
         HitInfo info = new HitInfo(contactPoint, contactNormal, other);
         foreach (var callback in shotData.onHitCallbacks)

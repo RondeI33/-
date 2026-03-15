@@ -17,6 +17,7 @@ public class WeaponController : MonoBehaviour
     [SerializeField] int maxDecals = 50;
     [SerializeField] float decalOffset = 0.016f;
     [SerializeField] float fadeDuration = 2f;
+    [SerializeField] float decalLifetime = 5f;
     private static readonly Color[] hitColors = new Color[]
     {
         new Color(0.8f, 0.3f, 0.9f, 1f),
@@ -41,7 +42,11 @@ public class WeaponController : MonoBehaviour
     private GameObject[] decalPool;
     private Material[] decalMats;
     private DecalFade[] decalFaders;
+    private float[] decalSpawnTimes;
     private int decalIndex;
+    private int decalLayerCounter;
+    private const int decalBaseQueue = 2501;
+    private const int decalMaxOffset = 2499;
     private float nextFireTime;
     private bool reloadBlocked;
     private Dictionary<GameObject, Queue<GameObject>> projectilePools = new Dictionary<GameObject, Queue<GameObject>>();
@@ -58,6 +63,7 @@ public class WeaponController : MonoBehaviour
         decalPool = new GameObject[maxDecals];
         decalMats = new Material[maxDecals];
         decalFaders = new DecalFade[maxDecals];
+        decalSpawnTimes = new float[maxDecals];
     }
 
     public void RefreshModuleCache()
@@ -68,6 +74,21 @@ public class WeaponController : MonoBehaviour
 
     void Update()
     {
+        bool anyActive = false;
+        for (int i = 0; i < maxDecals; i++)
+        {
+            if (decalPool[i] != null && decalPool[i].activeSelf)
+            {
+                if (Time.time - decalSpawnTimes[i] >= decalLifetime)
+                    decalPool[i].SetActive(false);
+                else
+                    anyActive = true;
+            }
+        }
+
+        if (!anyActive)
+            decalLayerCounter = 0;
+
         bool wantsFire = autoFire
             ? attackAction.IsPressed()
             : attackAction.WasPressedThisFrame();
@@ -95,7 +116,7 @@ public class WeaponController : MonoBehaviour
         Vector3 toFirePoint = firePoint.position - camPos;
         float dist = toFirePoint.magnitude;
 
-        // Cast from camera toward firepoint � if a wall is in between, the barrel has clipped through it
+        // Cast from camera toward firepoint — if a wall is in between, the barrel has clipped through it
         if (Physics.Raycast(camPos, toFirePoint.normalized, out RaycastHit hit, dist, hitLayers))
             return hit.point + hit.normal * 0.05f;
 
@@ -115,6 +136,14 @@ public class WeaponController : MonoBehaviour
         if (activeSources == 0) return;
 
         Vector3 safeOrigin = GetSafeFireOrigin();
+        bool originWasOverridden = safeOrigin != firePoint.position;
+
+
+        Vector3 camOrigin = playerCamera.transform.position;
+        Vector3 camForward = playerCamera.transform.forward;
+        Vector3 aimPoint = Physics.Raycast(camOrigin, camForward, out RaycastHit aimHit, 1000f, hitLayers)
+            ? aimHit.point
+            : camOrigin + camForward * 1000f;
 
         List<ShotData> allShots = new List<ShotData>();
         int activeIndex = 0;
@@ -126,12 +155,11 @@ public class WeaponController : MonoBehaviour
             List<ShotData> shots = cachedSources[i].CreateShots(activeIndex, activeSources);
             foreach (ShotData shot in shots)
             {
-                if (shot.origin == Vector3.zero)
-                    shot.origin = safeOrigin;
-                else
-                    shot.origin = safeOrigin;
+                shot.origin = safeOrigin;
 
-                if (shot.direction == Vector3.zero)
+                if (originWasOverridden)
+                    shot.direction = (aimPoint - safeOrigin).normalized;
+                else if (shot.direction == Vector3.zero)
                     shot.direction = firePoint.forward;
 
                 shot.hitLayers = hitLayers;
@@ -374,6 +402,7 @@ public class WeaponController : MonoBehaviour
             decalPool[decalIndex] = Instantiate(decalPrefab, position, rotation);
             Renderer rend = decalPool[decalIndex].GetComponent<Renderer>();
             decalMats[decalIndex] = new Material(rend.material);
+            decalMats[decalIndex].SetFloat("_ZWrite", 0f);
             rend.material = decalMats[decalIndex];
             decalFaders[decalIndex] = decalPool[decalIndex].AddComponent<DecalFade>();
         }
@@ -381,16 +410,22 @@ public class WeaponController : MonoBehaviour
         {
             decalPool[decalIndex].transform.position = position;
             decalPool[decalIndex].transform.rotation = rotation;
+            decalPool[decalIndex].SetActive(true);
         }
+
+        if (decalLayerCounter >= decalMaxOffset)
+            decalLayerCounter = 0;
 
         Color color = hitColors[Random.Range(0, hitColors.Length)];
         decalMats[decalIndex].SetColor("_BaseColor", color);
-
+        decalMats[decalIndex].renderQueue = decalBaseQueue + decalLayerCounter;
+        decalLayerCounter++;
 
         Transform target = col.transform;
         Vector3 localPos = target.InverseTransformPoint(position);
         Quaternion localRot = Quaternion.Inverse(target.rotation) * rotation;
         decalFaders[decalIndex].Init(decalMats[decalIndex], color, fadeDuration, target, localPos, localRot);
+        decalSpawnTimes[decalIndex] = Time.time;
         decalIndex = (decalIndex + 1) % maxDecals;
     }
 }

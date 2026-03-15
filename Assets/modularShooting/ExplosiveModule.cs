@@ -32,7 +32,15 @@ public class ExplosiveModule : MonoBehaviour, IShotModifier
                     float d = data.GetProperty("explosionDamage", 0f);
 
                     if (fx != null)
-                        Instantiate(fx, info.point, Quaternion.identity);
+                    {
+                        GameObject fxInstance = Instantiate(fx, info.point, Quaternion.identity);
+                        ParticleSystem ps = fxInstance.GetComponent<ParticleSystem>();
+                        if (ps != null)
+                        {
+                            var main = ps.main;
+                            main.startSize = r * 2f;
+                        }
+                    }
 
                     Collider[] hits = Physics.OverlapSphere(info.point, r, data.hitLayers);
                     foreach (Collider col in hits)

@@ -1732,7 +1732,7 @@ MonoBehaviour:
   agentAngularSpeed: 120
   agentAcceleration: 8
   agentStoppingDistance: 0.33
-  agentRadius: 0.72
+  agentRadius: 1.13
   agentHeight: 3.69
   animCont: {fileID: 5657536573254868265}
   hitParticlePrefab: {fileID: 2536517189527467608, guid: 322aa3cd842193449a99836f6d5809bd, type: 3}

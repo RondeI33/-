@@ -5274,7 +5274,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &311213217
 Transform:
   m_ObjectHideFlags: 0
@@ -7766,6 +7766,7 @@ GameObject:
   - component: {fileID: 441027931}
   - component: {fileID: 441027942}
   - component: {fileID: 441027941}
+  - component: {fileID: 441027946}
   - component: {fileID: 441027940}
   - component: {fileID: 441027939}
   - component: {fileID: 441027938}
@@ -7792,7 +7793,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ProjectileShooter
   projectilePrefab: {fileID: 2033986261789412172, guid: 3fa331fee2400aa40b094f8740b47ef6, type: 3}
   damage: 25
-  speed: 25
+  speed: 2137
   maxDistance: 200
   spreadAngle: 3
 --- !u!114 &441027932
@@ -7816,8 +7817,9 @@ MonoBehaviour:
   autoFire: 1
   decalPrefab: {fileID: 8843963820380974318, guid: d4149dbfaffe94848b78ba40ab4ba60d, type: 3}
   maxDecals: 2137
-  decalOffset: 0.016
+  decalOffset: 0.0001
   fadeDuration: 2
+  decalLifetime: 5
   weakpointMultiplier: 2
   hitAudioSource: {fileID: 441027933}
   hitSound: {fileID: 8300000, guid: ad360e77725808d4dbb5a521408b9c7b, type: 3}
@@ -8047,7 +8049,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 441027930}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 2d39a8a9d5e507e4882793e022e44cbb, type: 3}
   m_Name: 
@@ -8114,6 +8116,21 @@ MonoBehaviour:
   reloadDipAmount: -0.66
   reloadDipSpeed: 6
   reloadDipReturnSpeed: 4
+--- !u!114 &441027946
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 441027930}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 880a6801053e3a84f919f6ef449b1016, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ExplosiveModule
+  explosionRadius: 2.5
+  explosionDamage: 15
+  explosionEffectPrefab: {fileID: 7562253074010408613, guid: 34cbfef6fe5df334caf51b20aa3f3c1b, type: 3}
 --- !u!1 &441182474
 GameObject:
   m_ObjectHideFlags: 0
@@ -9021,7 +9038,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 453421202}
-  - component: {fileID: 453421205}
   - component: {fileID: 453421204}
   - component: {fileID: 453421203}
   m_Layer: 0
@@ -9073,40 +9089,11 @@ MonoBehaviour:
   m_GameObject: {fileID: 453421201}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b308f89d79bf48d42b1866b7858d6e08, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::WeaponRecoil
-  recoilDistance: 0.67
-  recoilRotation: 3
-  recoilRotationAxis: {x: -1, y: 0, z: 0}
-  recoilPushAxis: {x: 0, y: 0, z: -1}
-  recoilSpeed: 67
-  recoverySpeed: 4
-  rotationDelay: 0.05
-  fullAuto: 1
-  fireRate: 6
-  useCooldown: 0
-  cooldownTime: 0.5
-  maxAmmo: 6
-  reloadClip: {fileID: 0}
-  reloadAnimationName: reload
-  reloadSpeed: 2
-  ammoPerSpin: 1
-  dropPrefab: {fileID: 0}
---- !u!114 &453421205
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 453421201}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 8e817f5f6ce260a428a5256a12d6d072, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::WeaponSway
-  swayTarget: {fileID: 0}
-  tiltAmount: 10
+  swayTarget: {fileID: 441027936}
+  tiltAmount: -10
   smoothSpeed: 8
   bobSpeed: 10
   bobAmount: 0.06
@@ -9138,7 +9125,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &454500983
 Transform:
   m_ObjectHideFlags: 0
@@ -40414,6 +40401,7 @@ MonoBehaviour:
   maxDecals: 2137
   decalOffset: 0.016
   fadeDuration: 2
+  decalLifetime: 5
   weakpointMultiplier: 2
   hitAudioSource: {fileID: 2081252388}
   hitSound: {fileID: 8300000, guid: ad360e77725808d4dbb5a521408b9c7b, type: 3}

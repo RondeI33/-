@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.AI;
+using System.Collections;
 
 public class Strzelacz : MonoBehaviour, IEnemy
 {
@@ -77,6 +78,17 @@ public class Strzelacz : MonoBehaviour, IEnemy
     [SerializeField] private float pitchMin = 0.9f;
     [SerializeField] private float pitchMax = 1.1f;
 
+    [Header("Off-Mesh Link Traversal")]
+    [SerializeField] private float dropDuration = 0.4f;
+    [SerializeField] private float jumpDuration = 0.5f;
+    [SerializeField] private float jumpHeight = 2f;
+
+    [Header("Jump Up")]
+    [SerializeField] private float jumpUpMaxHeight = 5f;
+    [SerializeField] private float jumpUpHorizontalRange = 6f;
+    [SerializeField] private float jumpUpCheckInterval = 0.5f;
+    [SerializeField] private float jumpUpDuration = 0.6f;
+
     private bool dying;
     private float deathTimer;
     private Vector3 deathStartPos;
@@ -114,6 +126,10 @@ public class Strzelacz : MonoBehaviour, IEnemy
     private Vector3 scaleOverride;
     private bool applyScaleOverride;
 
+    private bool traversingLink;
+    private float jumpUpCheckTimer;
+    private NavMeshPath pathCache;
+
     public void InitAgent()
     {
         agent = gameObject.AddComponent<NavMeshAgent>();
@@ -124,6 +140,8 @@ public class Strzelacz : MonoBehaviour, IEnemy
         agent.radius = agentRadius;
         agent.height = agentHeight;
         agent.updateRotation = false;
+        agent.autoTraverseOffMeshLink = false;
+        pathCache = new NavMeshPath();
     }
     private void UpdateWalkAnimation()
     {
@@ -451,6 +469,13 @@ public class Strzelacz : MonoBehaviour, IEnemy
         if (rising) return;
         if (!active || player == null || agent == null) return;
         if (forceApplier != null && forceApplier.IsKnocked) return;
+        if (traversingLink) return;
+
+        if (agent.isOnOffMeshLink)
+        {
+            StartCoroutine(TraverseOffMeshLink());
+            return;
+        }
 
         float dist = Vector3.Distance(transform.position, player.position);
 
@@ -482,6 +507,106 @@ public class Strzelacz : MonoBehaviour, IEnemy
         FaceMovement();
         AimHand();
         agent.SetDestination(player.position);
+
+        jumpUpCheckTimer -= Time.deltaTime;
+        if (jumpUpCheckTimer <= 0f)
+        {
+            jumpUpCheckTimer = jumpUpCheckInterval;
+            TryJumpUp();
+        }
+    }
+
+    private void TryJumpUp()
+    {
+        if (pathCache == null) return;
+
+        float heightDiff = player.position.y - transform.position.y;
+        if (heightDiff < agent.height * 0.5f || heightDiff > jumpUpMaxHeight) return;
+
+        Vector3 horizontal = player.position - transform.position;
+        horizontal.y = 0f;
+        if (horizontal.sqrMagnitude > jumpUpHorizontalRange * jumpUpHorizontalRange) return;
+
+        agent.CalculatePath(player.position, pathCache);
+        if (pathCache.status == NavMeshPathStatus.PathComplete) return;
+
+        NavMeshHit hit;
+        if (!NavMesh.SamplePosition(player.position, out hit, jumpUpMaxHeight, NavMesh.AllAreas)) return;
+
+        StartCoroutine(JumpUp(hit.position));
+    }
+
+    private IEnumerator JumpUp(Vector3 landingPos)
+    {
+        traversingLink = true;
+        agent.ResetPath();
+        agent.enabled = false;
+
+        Vector3 startPos = transform.position;
+        float peakY = landingPos.y + jumpHeight;
+        float elapsed = 0f;
+
+        while (elapsed < jumpUpDuration)
+        {
+            float t = elapsed / jumpUpDuration;
+            float horizontalT = t * t;
+            float verticalT = 1f - (1f - t) * (1f - t);
+
+            float x = Mathf.Lerp(startPos.x, landingPos.x, horizontalT);
+            float z = Mathf.Lerp(startPos.z, landingPos.z, horizontalT);
+
+            float y;
+            if (t < 0.6f)
+            {
+                float riseT = t / 0.6f;
+                y = Mathf.Lerp(startPos.y, peakY, riseT * riseT * (3f - 2f * riseT));
+            }
+            else
+            {
+                float fallT = (t - 0.6f) / 0.4f;
+                y = Mathf.Lerp(peakY, landingPos.y, fallT * fallT);
+            }
+
+            transform.position = new Vector3(x, y, z);
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        transform.position = landingPos;
+        agent.enabled = true;
+        agent.Warp(landingPos);
+        traversingLink = false;
+    }
+
+    private IEnumerator TraverseOffMeshLink()
+    {
+        traversingLink = true;
+        OffMeshLinkData data = agent.currentOffMeshLinkData;
+        Vector3 startPos = transform.position;
+        Vector3 endPos = data.endPos + Vector3.up * agent.baseOffset;
+        float elapsed = 0f;
+
+        bool isDrop = data.linkType == OffMeshLinkType.LinkTypeDropDown;
+        float duration = isDrop ? dropDuration : jumpDuration;
+
+        while (elapsed < duration)
+        {
+            float t = elapsed / duration;
+            Vector3 pos = Vector3.Lerp(startPos, endPos, t);
+
+            if (isDrop)
+                pos.y = Mathf.Lerp(startPos.y, endPos.y, t * t);
+            else
+                pos.y += Mathf.Sin(Mathf.PI * t) * jumpHeight;
+
+            transform.position = pos;
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        transform.position = endPos;
+        agent.CompleteOffMeshLink();
+        traversingLink = false;
     }
 
     private void FacePlayer()
