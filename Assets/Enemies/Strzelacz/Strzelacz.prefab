@@ -1263,13 +1263,12 @@ MonoBehaviour:
   deathVolume: 1
   pitchMin: 0.9
   pitchMax: 1.1
-  dropDuration: 0.4
+  dropDuration: 0.6
   jumpDuration: 0.5
-  jumpHeight: 2
-  jumpUpMaxHeight: 4
-  jumpUpHorizontalRange: 6
+  jumpUpMaxHeight: 3
   jumpUpCheckInterval: 0.5
-  jumpUpDuration: 1.2
+  jumpUpDuration: 0.6
+  jumpUpLandingOffset: 2
 --- !u!82 &4778021417005630919
 AudioSource:
   m_ObjectHideFlags: 0

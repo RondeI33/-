@@ -27,6 +27,9 @@ public class ShotProjectile : MonoBehaviour
     private AnimationCurve trailWidthCurve;
     private float trailWidthMultiplier;
 
+    private Vector3 cameraDirection;
+    private bool firstBounce;
+
     void Awake()
     {
         rb = GetComponent<Rigidbody>();
@@ -47,6 +50,9 @@ public class ShotProjectile : MonoBehaviour
         splitFireTime = data.GetProperty("splitFireTime", 0f);
         despawnTime = Time.time + lifetime;
         spawnPosition = transform.position;
+
+        cameraDirection = Camera.main.transform.forward;
+        firstBounce = true;
 
         useSpeedTrail = data.speed > speedTrailThreshold;
         trailSegmentStart = spawnPosition;
@@ -195,7 +201,9 @@ public class ShotProjectile : MonoBehaviour
                         callback.Invoke(info, shotData);
                 }
 
-                dir = Vector3.Reflect(dir, hit.normal);
+                Vector3 reflectInput = firstBounce ? cameraDirection : dir;
+                firstBounce = false;
+                dir = Vector3.Reflect(reflectInput, hit.normal);
                 origin = hit.point + hit.normal * 0.05f;
                 bouncesLeft--;
                 bounced = true;
