@@ -52,4 +52,9 @@ public class FPSCamera : MonoBehaviour
         transform.localRotation = Quaternion.Euler(xRotation, 0f, 0f);
         transform.parent.Rotate(Vector3.up * mouseX);
     }
+    public void OnPortalTeleport(float newPitch)
+    {
+        xRotation = Mathf.Clamp(newPitch, minVerticalAngle, maxVerticalAngle);
+        transform.localRotation = Quaternion.Euler(xRotation, 0f, 0f);
+    }
 }

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 [RequireComponent(typeof(Rigidbody))]
-public class ShotProjectile : MonoBehaviour
+public class ShotProjectile : PortalTraveller
 {
     [SerializeField] float lifetime = 5f;
     [SerializeField] float maxRange = 200f;
@@ -29,11 +29,72 @@ public class ShotProjectile : MonoBehaviour
 
     private Vector3 cameraDirection;
     private bool firstBounce;
+    private Vector3 previousPosition;
 
     void Awake()
     {
         rb = GetComponent<Rigidbody>();
         trails = GetComponentsInChildren<TrailRenderer>();
+        travellerType = PortalTravellerType.Projectile;
+    }
+
+    public override void Teleport(Transform fromPortal, Transform toPortal, Vector3 pos, Quaternion rot)
+    {
+        Quaternion portalRotDiff = toPortal.rotation * Quaternion.Euler(0f, 180f, 0f) * Quaternion.Inverse(fromPortal.rotation);
+        Vector3 newVel = portalRotDiff * rb.linearVelocity;
+        Vector3 newAngVel = portalRotDiff * rb.angularVelocity;
+
+        rb.position = pos;
+        rb.rotation = rot;
+        transform.position = pos;
+        transform.rotation = rot;
+
+        rb.linearVelocity = newVel;
+        rb.angularVelocity = newAngVel;
+        cameraDirection = portalRotDiff * cameraDirection;
+        spawnPosition = pos;
+        trailSegmentStart = pos;
+        previousPosition = pos;
+
+        Physics.SyncTransforms();
+        lastTeleportTime = Time.time;
+    }
+
+    public override void EnterPortalThreshold()
+    {
+        if (graphicsObject == null)
+        {
+            if (graphicsClone == null)
+            {
+                graphicsClone = new GameObject("ProjectileClone");
+                graphicsClone.transform.parent = transform.parent;
+                originalMaterials = new Material[0];
+                cloneMaterials = new Material[0];
+            }
+            else
+            {
+                graphicsClone.SetActive(true);
+            }
+            return;
+        }
+        base.EnterPortalThreshold();
+    }
+
+    public override void ExitPortalThreshold()
+    {
+        if (graphicsClone != null)
+            graphicsClone.SetActive(false);
+        if (originalMaterials != null)
+        {
+            for (int i = 0; i < originalMaterials.Length; i++)
+                originalMaterials[i].SetVector("sliceNormal", Vector3.zero);
+        }
+    }
+
+    void OnDisable()
+    {
+        if (graphicsClone != null)
+            graphicsClone.SetActive(false);
     }
 
     public void Init(ShotData data)
@@ -50,6 +111,7 @@ public class ShotProjectile : MonoBehaviour
         splitFireTime = data.GetProperty("splitFireTime", 0f);
         despawnTime = Time.time + lifetime;
         spawnPosition = transform.position;
+        previousPosition = transform.position;
 
         cameraDirection = Camera.main.transform.forward;
         firstBounce = true;
@@ -151,6 +213,14 @@ public class ShotProjectile : MonoBehaviour
     void FixedUpdate()
     {
         if (hasHit || shotData == null) return;
+
+        Vector3 curPos = transform.position;
+        if (Portal.TryPassThrough(this, previousPosition, curPos))
+        {
+            previousPosition = transform.position;
+            return;
+        }
+        previousPosition = curPos;
 
         Vector3 vel = rb.linearVelocity;
         float speed = vel.magnitude;

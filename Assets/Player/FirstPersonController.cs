@@ -2,7 +2,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 [RequireComponent(typeof(CharacterController))]
-public class FirstPersonController : MonoBehaviour
+public class FirstPersonController : PortalTraveller
 {
     [Header("Movement Settings")]
     private float walkSpeed = 5.66f;
@@ -32,6 +32,7 @@ public class FirstPersonController : MonoBehaviour
     private bool hasBounced = false;
     private float bounceCooldown = 0f;
     private float speedMultiplier = 1f;
+    FPSCamera fpsCam;
     private void Awake()
     {
         controller = GetComponent<CharacterController>();
@@ -40,7 +41,45 @@ public class FirstPersonController : MonoBehaviour
         moveAction = playerInput.actions["Move"];
         jumpAction = playerInput.actions["Jump"];
         pushAction = playerInput.actions["Push"];
+        travellerType = PortalTravellerType.Player;
+        fpsCam = GetComponentInChildren<FPSCamera>();
     }
+
+    public override void Teleport(Transform fromPortal, Transform toPortal, Vector3 pos, Quaternion rot)
+    {
+        controller.enabled = false;
+
+        Quaternion portalRotDiff = toPortal.rotation * Quaternion.Euler(0f, 180f, 0f) * Quaternion.Inverse(fromPortal.rotation);
+
+        velocity = portalRotDiff * velocity;
+        moveDirection = portalRotDiff * moveDirection;
+
+        Vector3 forceVel = forceApplier.GetVelocity();
+        if (forceVel.sqrMagnitude > 0.01f)
+            forceApplier.SetVelocity(portalRotDiff * forceVel);
+
+        transform.position = pos;
+
+        Vector3 oldForward = transform.forward;
+        Vector3 newForward = portalRotDiff * oldForward;
+        float newYaw = Mathf.Atan2(newForward.x, newForward.z) * Mathf.Rad2Deg;
+        transform.rotation = Quaternion.Euler(0f, newYaw, 0f);
+
+        if (fpsCam != null)
+        {
+            Vector3 oldCamForward = fpsCam.transform.forward;
+            Vector3 newCamForward = portalRotDiff * oldCamForward;
+            float newPitch = -Mathf.Asin(Mathf.Clamp(newCamForward.y, -1f, 1f)) * Mathf.Rad2Deg;
+            fpsCam.OnPortalTeleport(newPitch);
+        }
+
+        controller.enabled = true;
+        Physics.SyncTransforms();
+        lastTeleportTime = Time.time;
+    }
+
+    public override void EnterPortalThreshold() { }
+    public override void ExitPortalThreshold() { }
 
     private void Update()
     {
@@ -116,7 +155,7 @@ public class FirstPersonController : MonoBehaviour
     {
         isGrounded = IsGrounded();
         moveInput = moveAction.ReadValue<Vector2>();
-        
+
         Vector3 targetMoveDirection = (transform.right * moveInput.x + transform.forward * moveInput.y).normalized;
         float currentSpeed = (isGrounded ? walkSpeed : walkSpeed * airControl) * speedMultiplier;
 
@@ -192,13 +231,13 @@ public class FirstPersonController : MonoBehaviour
         {
             if (forceApplier.GetVelocity().y > 0 && !hasBounced)
             {
-                
+
                 hasBounced = true;
                 bounceCooldown = 0.333f;
             }
             else if (bounceCooldown <= 0)
             {
-                
+
                 velocity.y = -2f;
                 if (hasBounced)
                 {
@@ -207,7 +246,7 @@ public class FirstPersonController : MonoBehaviour
                 }
             }
         }
-       
+
         if (wallNormal != Vector3.zero)
         {
 
@@ -231,7 +270,7 @@ public class FirstPersonController : MonoBehaviour
     }
     private void HandlePushForce()
     {
-        
+
         if (pushAction.WasPressedThisFrame())
         {
             Vector3 pushDirection = -transform.forward;
@@ -277,4 +316,4 @@ public class FirstPersonController : MonoBehaviour
     {
         return walkSpeed;
     }
-}
+}   
