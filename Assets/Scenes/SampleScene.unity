@@ -7793,7 +7793,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ProjectileShooter
   projectilePrefab: {fileID: 2033986261789412172, guid: 3fa331fee2400aa40b094f8740b47ef6, type: 3}
   damage: 25
-  speed: 2137
+  speed: 12
   maxDistance: 200
   spreadAngle: 3
 --- !u!114 &441027932

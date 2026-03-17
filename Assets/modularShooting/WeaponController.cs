@@ -45,8 +45,8 @@ public class WeaponController : MonoBehaviour
     private float[] decalSpawnTimes;
     private int decalIndex;
     private int decalLayerCounter;
-    private const int decalBaseQueue = 2501;
-    private const int decalMaxOffset = 2499;
+    private const int decalBaseQueue = 2001;
+    private const int decalMaxQueue = 3000;
     private float nextFireTime;
     private bool reloadBlocked;
     private Dictionary<GameObject, Queue<GameObject>> projectilePools = new Dictionary<GameObject, Queue<GameObject>>();
@@ -413,8 +413,15 @@ public class WeaponController : MonoBehaviour
             decalPool[decalIndex].SetActive(true);
         }
 
-        if (decalLayerCounter >= decalMaxOffset)
+        if (decalBaseQueue + decalLayerCounter > decalMaxQueue)
+        {
+            for (int i = 0; i < maxDecals; i++)
+            {
+                if (decalPool[i] != null && decalPool[i].activeSelf && i != decalIndex)
+                    decalPool[i].SetActive(false);
+            }
             decalLayerCounter = 0;
+        }
 
         Color color = hitColors[Random.Range(0, hitColors.Length)];
         decalMats[decalIndex].SetColor("_BaseColor", color);
