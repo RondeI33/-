@@ -28,6 +28,7 @@ public class ShotProjectile : PortalTraveller
     private float trailWidthMultiplier;
 
     private Vector3 cameraDirection;
+    private Vector3 cameraPosition;
     private bool firstBounce;
     private Vector3 previousPosition;
 
@@ -40,24 +41,44 @@ public class ShotProjectile : PortalTraveller
 
     public override void Teleport(Transform fromPortal, Transform toPortal, Vector3 pos, Quaternion rot)
     {
-        Quaternion portalRotDiff = toPortal.rotation * Quaternion.Euler(0f, 180f, 0f) * Quaternion.Inverse(fromPortal.rotation);
-        Vector3 newVel = portalRotDiff * rb.linearVelocity;
-        Vector3 newAngVel = portalRotDiff * rb.angularVelocity;
+        foreach (var trail in trails)
+        {
+            trail.emitting = false;
+            trail.Clear();
+        }
 
-        rb.position = pos;
-        rb.rotation = rot;
+        Matrix4x4 portalMatrix = toPortal.localToWorldMatrix
+            * Matrix4x4.Rotate(Quaternion.Euler(0f, 180f, 0f))
+            * fromPortal.worldToLocalMatrix;
+
+        float speed = rb.linearVelocity.magnitude;
+        Vector3 newCamDir = portalMatrix.MultiplyVector(cameraDirection).normalized;
+        Vector3 virtualCamPos = portalMatrix.MultiplyPoint3x4(cameraPosition);
+
+        Vector3 farTarget = virtualCamPos + newCamDir * maxRange;
+        Vector3 newVel = (farTarget - pos).normalized * speed;
+        Quaternion newRot = Quaternion.LookRotation(newVel.normalized);
+
         transform.position = pos;
-        transform.rotation = rot;
-
+        transform.rotation = newRot;
+        rb.position = pos;
+        rb.rotation = newRot;
         rb.linearVelocity = newVel;
-        rb.angularVelocity = newAngVel;
-        cameraDirection = portalRotDiff * cameraDirection;
+        rb.angularVelocity = Vector3.zero;
+        cameraDirection = newCamDir;
+        cameraPosition = virtualCamPos;
         spawnPosition = pos;
         trailSegmentStart = pos;
         previousPosition = pos;
 
         Physics.SyncTransforms();
         lastTeleportTime = Time.time;
+
+        foreach (var trail in trails)
+        {
+            trail.Clear();
+            trail.emitting = true;
+        }
     }
 
     public override void EnterPortalThreshold()
@@ -114,6 +135,7 @@ public class ShotProjectile : PortalTraveller
         previousPosition = transform.position;
 
         cameraDirection = Camera.main.transform.forward;
+        cameraPosition = Camera.main.transform.position;
         firstBounce = true;
 
         useSpeedTrail = data.speed > speedTrailThreshold;
@@ -303,6 +325,7 @@ public class ShotProjectile : PortalTraveller
     void OnTriggerEnter(Collider other)
     {
         if (hasHit || shotData == null) return;
+        if (other.GetComponent<Portal>() != null) return;
 
         int otherLayer = 1 << other.gameObject.layer;
         if ((shotData.hitLayers.value & otherLayer) == 0) return;

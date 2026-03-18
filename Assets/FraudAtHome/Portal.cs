@@ -43,12 +43,19 @@ public class Portal : MonoBehaviour
         screen.material.SetInt("displayMask", 1);
         if (screen2 != null)
             screen2.material = screen.material;
-        gameObject.layer = 2;
-        screen.gameObject.layer = 2;
 
-        Collider screenCol = screen.GetComponent<Collider>();
-        if (screenCol != null)
-            Destroy(screenCol);
+        BoxCollider box = GetComponent<BoxCollider>();
+        if (box != null) box.isTrigger = true;
+
+        foreach (Transform child in GetComponentsInChildren<Transform>(true))
+        {
+            child.gameObject.layer = 2;
+            if (child != transform)
+            {
+                Collider col = child.GetComponent<Collider>();
+                if (col != null) Destroy(col);
+            }
+        }
     }
 
     bool IsFrontSide(Vector3 pos)
@@ -91,8 +98,7 @@ public class Portal : MonoBehaviour
 
             if (portalSide != portalSideOld)
             {
-                if (portalSideOld < 0)
-                    traveller.Teleport(transform, linkedPortal.transform, m.GetColumn(3), m.rotation);
+                traveller.Teleport(transform, linkedPortal.transform, m.GetColumn(3), m.rotation);
                 if (traveller.graphicsClone != null)
                     traveller.ExitPortalThreshold();
                 trackedTravellers.RemoveAt(i);
@@ -118,7 +124,12 @@ public class Portal : MonoBehaviour
     public void Render()
     {
         if (!IsLinked) return;
-        if (!CameraUtility.VisibleFromCamera(linkedPortal.screen, playerCam)) return;
+
+        float distToThis = (playerCam.transform.position - transform.position).sqrMagnitude;
+        float distToLinked = (playerCam.transform.position - linkedPortal.transform.position).sqrMagnitude;
+        bool playerNearby = distToThis < 25f || distToLinked < 25f;
+
+        if (!playerNearby && !CameraUtility.VisibleFromCamera(linkedPortal.screen, playerCam)) return;
 
         CreateViewTexture();
 
@@ -146,20 +157,22 @@ public class Portal : MonoBehaviour
         }
 
         screen.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly;
-        linkedPortal.screen.material.SetInt("displayMask", 0);
 
         for (int i = startIndex; i < recursionLimit; i++)
         {
             portalCam.transform.SetPositionAndRotation(renderPositions[i], renderRotations[i]);
             SetNearClipPlane();
             HandleClipping();
-            portalCam.Render();
 
             if (i == startIndex)
-            {
-                linkedPortal.screen.material.SetInt("displayMask", 1);
-            }
+                linkedPortal.screen.enabled = true;
+            else
+                linkedPortal.screen.enabled = true;
+
+            portalCam.Render();
         }
+
+        linkedPortal.screen.enabled = true;
 
         screen.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
     }
@@ -219,12 +232,14 @@ public class Portal : MonoBehaviour
     {
         if (viewTexture == null || viewTexture.width != Screen.width || viewTexture.height != Screen.height)
         {
-            if (viewTexture != null)
-                viewTexture.Release();
+            RenderTexture oldTexture = viewTexture;
 
             viewTexture = new RenderTexture(Screen.width, Screen.height, 24);
             portalCam.targetTexture = viewTexture;
             linkedPortal.screen.material.SetTexture("_MainTex", viewTexture);
+
+            if (oldTexture != null)
+                oldTexture.Release();
         }
     }
 
@@ -318,7 +333,6 @@ public class Portal : MonoBehaviour
         if (traveller == null) return;
         if (!CanTraverse(traveller)) return;
         if (Time.time - traveller.lastTeleportTime < 0.1f) return;
-        if (!IsFrontSide(other.transform.position)) return;
         OnTravellerEnterPortal(traveller);
     }
 
@@ -326,13 +340,9 @@ public class Portal : MonoBehaviour
     {
         var traveller = other.GetComponent<PortalTraveller>();
         if (traveller == null) return;
-        if (!IsFrontSide(other.transform.position) && !trackedTravellers.Contains(traveller))
-            return;
-        if (trackedTravellers.Contains(traveller))
-            return;
+        if (trackedTravellers.Contains(traveller)) return;
         if (!CanTraverse(traveller)) return;
         if (Time.time - traveller.lastTeleportTime < 0.1f) return;
-        if (!IsFrontSide(other.transform.position)) return;
         OnTravellerEnterPortal(traveller);
     }
 
@@ -377,13 +387,11 @@ public class Portal : MonoBehaviour
 
             float t = d1 / (d1 - d2);
             Vector3 intersection = Vector3.Lerp(from, to, t);
-            Vector3 local = p.screen.transform.InverseTransformPoint(intersection);
 
-            Bounds screenBounds = p.screenMeshFilter.sharedMesh.bounds;
-            float halfW = screenBounds.extents.x;
-            float halfH = screenBounds.extents.y;
-
-            if (Mathf.Abs(local.x) > halfW || Mathf.Abs(local.y) > halfH)
+            Vector3 screenScale = p.screen.transform.lossyScale;
+            float maxPortalRadius = Mathf.Max(screenScale.x, screenScale.y) + 1f;
+            float flatDist = Vector3.ProjectOnPlane(intersection - portalPos, portalNormal).magnitude;
+            if (flatDist > maxPortalRadius)
                 continue;
 
             var m = p.linkedPortal.transform.localToWorldMatrix * flipMatrix * p.transform.worldToLocalMatrix * traveller.transform.localToWorldMatrix;

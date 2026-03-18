@@ -116,9 +116,17 @@ public class WeaponController : MonoBehaviour
         Vector3 toFirePoint = firePoint.position - camPos;
         float dist = toFirePoint.magnitude;
 
-        // Cast from camera toward firepoint — if a wall is in between, the barrel has clipped through it
         if (Physics.Raycast(camPos, toFirePoint.normalized, out RaycastHit hit, dist, hitLayers))
+        {
+            Collider[] nearby = Physics.OverlapSphere(firePoint.position, 0.3f, 1 << 2);
+            for (int i = 0; i < nearby.Length; i++)
+            {
+                if (nearby[i].GetComponent<Portal>() != null)
+                    return firePoint.position;
+            }
+
             return hit.point + hit.normal * 0.05f;
+        }
 
         return firePoint.position;
     }

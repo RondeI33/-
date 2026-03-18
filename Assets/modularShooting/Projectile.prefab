@@ -13,7 +13,6 @@ GameObject:
   - component: {fileID: 7944001131765758454}
   - component: {fileID: 495302950039220897}
   - component: {fileID: 6203229046535909636}
-  - component: {fileID: 2605123640209687274}
   - component: {fileID: 4253795216803351190}
   - component: {fileID: 1097963260783050557}
   m_Layer: 2
@@ -143,23 +142,6 @@ Rigidbody:
   m_Interpolate: 0
   m_Constraints: 0
   m_CollisionDetection: 0
---- !u!114 &2605123640209687274
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2033986261789412172}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5241f56c5e697ce4aa6901356483106f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ProjectilePortalTraveller
-  graphicsObject: {fileID: 2033986261789412172}
-  travellerType: 2
-  moveDirection: {x: 0, y: 0, z: 0}
-  moveSpeed: 0
-  usesRigidbody: 0
 --- !u!114 &4253795216803351190
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -174,6 +156,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ShotProjectile
   graphicsObject: {fileID: 0}
   travellerType: 4
+  lastTeleportTime: -999
   lifetime: 120
   maxRange: 200
   speedTrailThreshold: 167

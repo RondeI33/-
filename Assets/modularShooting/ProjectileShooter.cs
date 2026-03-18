@@ -19,7 +19,17 @@ public class ProjectileShooter : MonoBehaviour, IFireSource
     public List<ShotData> CreateShots(int sourceIndex, int totalSources)
     {
         Transform fp = controller.GetFirePoint();
-        Vector3 dir = controller.GetAimDirection();
+
+        Camera cam = Camera.main;
+        Ray camRay = new Ray(cam.transform.position, cam.transform.forward);
+        Vector3 crosshairTarget;
+
+        if (Physics.Raycast(camRay, out RaycastHit camHit, maxDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+            crosshairTarget = camHit.point;
+        else
+            crosshairTarget = camRay.GetPoint(maxDistance);
+
+        Vector3 dir = (crosshairTarget - fp.position).normalized;
 
         if (totalSources > 1 && sourceIndex > 0)
         {
@@ -33,7 +43,6 @@ public class ProjectileShooter : MonoBehaviour, IFireSource
             dir = Quaternion.AngleAxis(spreadAngle, perp) * dir;
         }
 
-
         ShotData shot = new ShotData
         {
             origin = fp.position,
@@ -44,6 +53,7 @@ public class ProjectileShooter : MonoBehaviour, IFireSource
             isRaycast = false,
             projectilePrefab = projectilePrefab
         };
+
         return new List<ShotData> { shot };
     }
 }
