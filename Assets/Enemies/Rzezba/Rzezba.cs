@@ -84,6 +84,15 @@ public class Rzezba : MonoBehaviour, IEnemy
     [SerializeField] private float pitchMin = 0.9f;
     [SerializeField] private float pitchMax = 1.1f;
 
+    [Header("Off-Mesh Link Traversal")]
+    [SerializeField] private float dropDuration = 0.4f;
+    [SerializeField] private float jumpDuration = 0.5f;
+
+    [Header("Jump Up")]
+    [SerializeField] private float jumpUpMaxHeight = 3f;
+    [SerializeField] private float jumpUpCheckInterval = 0.5f;
+    [SerializeField] private float jumpUpDuration = 0.6f;
+
     // Death
     private bool dying;
     private float deathTimer;
@@ -131,6 +140,12 @@ public class Rzezba : MonoBehaviour, IEnemy
     private Vector3 handOriginalScale;
     private bool handGrowing;
 
+    private bool traversingLink;
+    private float jumpUpCheckTimer;
+    private NavMeshPath pathCache;
+    private Vector3 lastStuckCheckPos;
+    private float stuckTimer;
+
     public void InitAgent()
     {
         agent = gameObject.AddComponent<NavMeshAgent>();
@@ -141,6 +156,8 @@ public class Rzezba : MonoBehaviour, IEnemy
         agent.radius = agentRadius;
         agent.height = agentHeight;
         agent.updateRotation = false;
+        agent.autoTraverseOffMeshLink = false;
+        pathCache = new NavMeshPath();
     }
 
     private void Start()
@@ -207,6 +224,7 @@ public class Rzezba : MonoBehaviour, IEnemy
     public void Activate()
     {
         active = true;
+        lastStuckCheckPos = transform.position;
     }
 
     public void TakeDamage(float damage)
@@ -475,6 +493,30 @@ public class Rzezba : MonoBehaviour, IEnemy
 
         if (!active || player == null || agent == null) return;
         if (forceApplier != null && forceApplier.IsKnocked) return;
+        if (traversingLink) return;
+
+        if (agent.isOnOffMeshLink)
+        {
+            OffMeshLinkData linkData = agent.currentOffMeshLinkData;
+            bool isDrop = linkData.linkType == OffMeshLinkType.LinkTypeDropDown;
+            float playerHeightDiff = player.position.y - transform.position.y;
+            bool playerAbove = playerHeightDiff > 1f;
+
+            if (isDrop && playerAbove)
+            {
+                Vector3 landingPos;
+                if (TryFindLedge(out landingPos) && IsLandingClear(landingPos))
+                {
+                    agent.CompleteOffMeshLink();
+                    agent.ResetPath();
+                    StartCoroutine(JumpUp(landingPos));
+                    return;
+                }
+            }
+
+            StartCoroutine(TraverseOffMeshLink());
+            return;
+        }
 
         float dist = Vector3.Distance(transform.position, player.position);
 
@@ -526,6 +568,238 @@ public class Rzezba : MonoBehaviour, IEnemy
 
         FaceMovement();
         agent.SetDestination(player.position);
+
+        jumpUpCheckTimer -= Time.deltaTime;
+        if (jumpUpCheckTimer <= 0f)
+        {
+            jumpUpCheckTimer = jumpUpCheckInterval;
+            TryJumpUp();
+        }
+    }
+
+    private void TryJumpUp()
+    {
+        if (pathCache == null || traversingLink) return;
+
+        Vector3 landingPos;
+        if (!TryFindLedge(out landingPos)) return;
+        if (!IsLandingClear(landingPos)) return;
+
+        agent.CalculatePath(player.position, pathCache);
+        bool pathIncomplete = pathCache.status != NavMeshPathStatus.PathComplete;
+
+        if (pathIncomplete)
+        {
+            stuckTimer = 0f;
+            StartCoroutine(JumpUp(landingPos));
+            return;
+        }
+
+        float walkLength = 0f;
+        Vector3[] corners = pathCache.corners;
+        for (int i = 1; i < corners.Length; i++)
+            walkLength += Vector3.Distance(corners[i - 1], corners[i]);
+
+        NavMeshPath jumpPath = new NavMeshPath();
+        float jumpLength = Vector3.Distance(transform.position, landingPos);
+        if (NavMesh.CalculatePath(landingPos, player.position, NavMesh.AllAreas, jumpPath))
+        {
+            Vector3[] jCorners = jumpPath.corners;
+            for (int i = 1; i < jCorners.Length; i++)
+                jumpLength += Vector3.Distance(jCorners[i - 1], jCorners[i]);
+        }
+
+        if (jumpLength < walkLength)
+        {
+            stuckTimer = 0f;
+            StartCoroutine(JumpUp(landingPos));
+            return;
+        }
+
+        float movedDist = Vector3.Distance(transform.position, lastStuckCheckPos);
+        lastStuckCheckPos = transform.position;
+        if (agent.hasPath && movedDist < 0.1f)
+        {
+            stuckTimer += jumpUpCheckInterval;
+            if (stuckTimer > 1.5f)
+            {
+                stuckTimer = 0f;
+                StartCoroutine(JumpUp(landingPos));
+            }
+        }
+        else
+        {
+            stuckTimer = 0f;
+        }
+    }
+
+    private bool TryFindLedge(out Vector3 landingPos)
+    {
+        landingPos = Vector3.zero;
+        RaycastHit rayHit;
+        float enemyY = transform.position.y;
+
+        Vector3 toPlayer = player.position - transform.position;
+        toPlayer.y = 0f;
+        Vector3 dirToPlayer = toPlayer.sqrMagnitude > 0.001f ? toPlayer.normalized : transform.forward;
+
+        if (Physics.Raycast(transform.position + Vector3.up * 0.5f, dirToPlayer, out rayHit, jumpUpMaxHeight * 2f, obstacleLayer))
+        {
+            float wallAngle = Vector3.Angle(rayHit.normal, Vector3.up);
+            if (wallAngle < 50f) return false;
+
+            Vector3 wallPoint = rayHit.point;
+            float wallDist = rayHit.distance;
+
+            if (wallDist > agentRadius * 5f) return false;
+
+            Vector3 topScan = wallPoint + Vector3.up * (jumpUpMaxHeight + 1f);
+            if (Physics.Raycast(topScan, Vector3.down, out rayHit, jumpUpMaxHeight + 2f, obstacleLayer))
+            {
+                float h = rayHit.point.y - enemyY;
+                if (h > 0.5f && h <= jumpUpMaxHeight)
+                {
+                    landingPos = rayHit.point + Vector3.up * 0.05f;
+                    return true;
+                }
+            }
+
+            for (float y = 1f; y <= jumpUpMaxHeight; y += 0.5f)
+            {
+                Vector3 probe = wallPoint + Vector3.up * y + dirToPlayer * 0.5f;
+                if (!Physics.Raycast(probe, dirToPlayer, 1f, obstacleLayer))
+                {
+                    if (Physics.Raycast(probe + Vector3.up * 0.5f, Vector3.down, out rayHit, 1.5f, obstacleLayer))
+                    {
+                        float h = rayHit.point.y - enemyY;
+                        if (h > 0.5f && h <= jumpUpMaxHeight)
+                        {
+                            landingPos = rayHit.point + Vector3.up * 0.05f;
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (Physics.Raycast(transform.position + Vector3.up * 0.5f, Vector3.up, out rayHit, jumpUpMaxHeight, obstacleLayer))
+        {
+            Vector3 surfacePoint = rayHit.point + Vector3.up * 0.2f;
+            if (Physics.Raycast(surfacePoint + Vector3.up * 0.5f, Vector3.down, out rayHit, 1f, obstacleLayer))
+            {
+                float h = rayHit.point.y - enemyY;
+                if (h > 0.5f && h <= jumpUpMaxHeight)
+                {
+                    landingPos = rayHit.point + Vector3.up * 0.05f;
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private bool IsLandingClear(Vector3 landingPos)
+    {
+        Rzezba[] all = FindObjectsByType<Rzezba>(FindObjectsSortMode.None);
+        for (int i = 0; i < all.Length; i++)
+        {
+            if (all[i] == this || all[i].dying) continue;
+            if (all[i].traversingLink)
+            {
+                float dist = Vector3.Distance(landingPos, all[i].transform.position);
+                if (dist < agentRadius * 3f) return false;
+            }
+        }
+        return true;
+    }
+
+    private IEnumerator JumpUp(Vector3 landingPos)
+    {
+        traversingLink = true;
+        agent.ResetPath();
+        agent.enabled = false;
+
+        Vector3 startPos = transform.position;
+        float peakY = landingPos.y + 1f;
+        float elapsed = 0f;
+
+        Vector3 jumpDir = landingPos - startPos;
+        jumpDir.y = 0f;
+        Quaternion targetRot = jumpDir.sqrMagnitude > 0.001f ? Quaternion.LookRotation(jumpDir) : transform.rotation;
+
+        while (elapsed < jumpUpDuration)
+        {
+            float t = elapsed / jumpUpDuration;
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * 10f);
+
+            float x = Mathf.Lerp(startPos.x, landingPos.x, t);
+            float z = Mathf.Lerp(startPos.z, landingPos.z, t);
+            float baseY = Mathf.Lerp(startPos.y, landingPos.y, t);
+            float arc = Mathf.Sin(Mathf.PI * t) * (peakY - Mathf.Max(startPos.y, landingPos.y));
+
+            transform.position = new Vector3(x, baseY + arc, z);
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        transform.position = landingPos;
+        agent.enabled = true;
+        NavMeshHit warpHit;
+        if (NavMesh.SamplePosition(landingPos, out warpHit, 3f, NavMesh.AllAreas))
+            agent.Warp(warpHit.position);
+        else
+            agent.Warp(landingPos);
+        traversingLink = false;
+        jumpUpCheckTimer = 0f;
+    }
+
+    private IEnumerator TraverseOffMeshLink()
+    {
+        traversingLink = true;
+        OffMeshLinkData data = agent.currentOffMeshLinkData;
+        Vector3 startPos = transform.position;
+        Vector3 endPos = data.endPos + Vector3.up * agent.baseOffset;
+        float elapsed = 0f;
+
+        bool isDrop = data.linkType == OffMeshLinkType.LinkTypeDropDown;
+        float duration = isDrop ? dropDuration : jumpDuration;
+
+        Vector3 linkDir = endPos - startPos;
+        linkDir.y = 0f;
+        Quaternion targetRot = linkDir.sqrMagnitude > 0.001f ? Quaternion.LookRotation(linkDir) : transform.rotation;
+
+        while (elapsed < duration)
+        {
+            float t = elapsed / duration;
+
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * 10f);
+
+            if (isDrop)
+            {
+                float horizontalT = 1f - (1f - t) * (1f - t);
+                float x = Mathf.Lerp(startPos.x, endPos.x, horizontalT);
+                float z = Mathf.Lerp(startPos.z, endPos.z, horizontalT);
+                float y = Mathf.Lerp(startPos.y, endPos.y, t * t);
+                transform.position = new Vector3(x, y, z);
+            }
+            else
+            {
+                Vector3 pos = Vector3.Lerp(startPos, endPos, t);
+                float heightDiff = Mathf.Abs(endPos.y - startPos.y);
+                float arcAmount = Mathf.Max(heightDiff * 0.3f, 0.5f);
+                pos.y += Mathf.Sin(Mathf.PI * t) * arcAmount;
+                transform.position = pos;
+            }
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        transform.position = endPos;
+        agent.CompleteOffMeshLink();
+        traversingLink = false;
+        jumpUpCheckTimer = 0f;
     }
 
     private IEnumerator ThrowSequence()

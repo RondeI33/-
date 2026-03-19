@@ -260,6 +260,7 @@ public class RoomGenerator : MonoBehaviour
             int firstIdx = Random.Range(0, roomPrefabs.Length);
             GameObject firstRoom = Instantiate(roomPrefabs[firstIdx], Vector3.zero, Quaternion.identity);
             List<Transform> firstPts = GetMainPoints(firstRoom);
+            Shuffle(firstPts);
             Transform firstEntry = firstPts.Count > 0 ? firstPts[0] : firstRoom.transform.Find("Entrence");
             AlignRoom(firstRoom, firstEntry, currentExit);
             placedMultiBounds.Add(GetMultiBounds(firstRoom));

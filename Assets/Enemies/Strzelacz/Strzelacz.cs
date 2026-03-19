@@ -83,7 +83,7 @@ public class Strzelacz : MonoBehaviour, IEnemy
     [SerializeField] private float jumpDuration = 0.5f;
 
     [Header("Jump Up")]
-    [SerializeField] private float jumpUpMaxHeight = 5f;
+    [SerializeField] private float jumpUpMaxHeight = 3f;
     [SerializeField] private float jumpUpCheckInterval = 0.5f;
     [SerializeField] private float jumpUpDuration = 0.6f;
 
