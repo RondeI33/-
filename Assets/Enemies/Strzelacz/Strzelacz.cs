@@ -604,6 +604,9 @@ public class Strzelacz : MonoBehaviour, IEnemy
 
         if (Physics.Raycast(transform.position + Vector3.up * 0.5f, dirToPlayer, out rayHit, jumpUpMaxHeight * 2f, obstacleLayer))
         {
+            float wallAngle = Vector3.Angle(rayHit.normal, Vector3.up);
+            if (wallAngle < 50f) return false;
+
             Vector3 wallPoint = rayHit.point;
             float wallDist = rayHit.distance;
 

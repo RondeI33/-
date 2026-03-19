@@ -40,7 +40,6 @@ public class RoomGenerator : MonoBehaviour
     private List<PlacedRoom> mainChain = new List<PlacedRoom>();
     private Dictionary<int, HashSet<int>> failedPrefabsPerStep = new Dictionary<int, HashSet<int>>();
 
-    // indices in the main chain (1-based, skipping start/tutorial) where treasure rooms should be placed
     private HashSet<int> treasureInsertIndices = new HashSet<int>();
 
     private List<Bounds> GetMultiBounds(GameObject room)
@@ -195,7 +194,6 @@ public class RoomGenerator : MonoBehaviour
         }
     }
 
-    // picks `count` unique random indices spread across [minIdx, maxIdx] (inclusive)
     private HashSet<int> PickRandomIndices(int count, int minIdx, int maxIdx)
     {
         HashSet<int> result = new HashSet<int>();
@@ -241,8 +239,6 @@ public class RoomGenerator : MonoBehaviour
             ClearAll();
             placedMultiBounds.Add(startMultiBounds);
 
-            // pick random insertion points for main path treasure rooms
-            // skip index 0 (start) and leave the last 2 slots free for boss room buffer
             int firstValidIdx = hasTutorialRoom ? 2 : 1;
             int lastValidIdx = mainChainTarget - 3;
             treasureInsertIndices = PickRandomIndices(treasureRoomsOnMainPath, firstValidIdx, lastValidIdx);
@@ -313,7 +309,6 @@ public class RoomGenerator : MonoBehaviour
             int step = mainChain.Count;
             Transform prevExit = GetLastMainExit();
 
-            // try placing a treasure room at this step if it was pre-selected
             if (treasureInsertIndices.Contains(step) && treasureRoomPrefabs != null && treasureRoomPrefabs.Length > 0)
             {
                 int newChainIndex = placedMultiBounds.Count;
@@ -338,7 +333,6 @@ public class RoomGenerator : MonoBehaviour
                     Destroy(tRoom);
                 }
 
-                // if treasure couldn't fit, just skip it and continue with normal room
                 if (treasurePlaced) { yield return null; continue; }
             }
 
@@ -409,10 +403,10 @@ public class RoomGenerator : MonoBehaviour
         {
             Transform lastExit = GetLastMainExit();
             GameObject boss = Instantiate(bossRoomPrefab, Vector3.zero, Quaternion.identity);
-            int newChainIndex = placedMultiBounds.Count;
+            int parentBoundsIdx = placedMultiBounds.Count - 1;
             Transform usedEntry;
 
-            if (TryPlaceAny(boss, lastExit, newChainIndex, out usedEntry))
+            if (TryPlaceBranch(boss, lastExit, parentBoundsIdx, out usedEntry))
             {
                 boss.SetActive(false);
                 placedMultiBounds.Add(GetMultiBounds(boss));
@@ -460,13 +454,10 @@ public class RoomGenerator : MonoBehaviour
                 branchQueue.Enqueue(new BranchTask { exitPoint = openPts[j], parentBoundsIdx = boundsIdx });
         }
 
-        // collect all branch queue positions so we can pick random ones for treasure
-        // we decide per-slot with probability to place a treasure room when budget allows
         while (branchQueue.Count > 0 && roomsLeft > 0)
         {
             BranchTask task = branchQueue.Dequeue();
 
-            // randomly decide to place a treasure room on this branch slot
             bool tryTreasureHere = branchTreasuresLeft > 0
                 && treasureRoomPrefabs != null
                 && treasureRoomPrefabs.Length > 0
