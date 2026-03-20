@@ -86,6 +86,20 @@ public class Strzelacz : MonoBehaviour, IEnemy
     [SerializeField] private float jumpUpMaxHeight = 3f;
     [SerializeField] private float jumpUpCheckInterval = 0.5f;
     [SerializeField] private float jumpUpDuration = 0.6f;
+    [SerializeField] private float jumpUpChance = 0.1f;
+
+    [Header("Combat AI")]
+    [SerializeField] private float strafeSpeedMultiplier = 0.75f;
+    [SerializeField] private float repositionSprintMultiplier = 1.5f;
+    [SerializeField] private float minStrafeChangeTime = 0.5f;
+    [SerializeField] private float maxStrafeChangeTime = 1.5f;
+    [SerializeField] private float minRepositionTime = 2f;
+    [SerializeField] private float maxRepositionTime = 5f;
+    [SerializeField] private float dodgeOnHitChance = 0.4f;
+    [SerializeField] private float approachOffsetDistance = 4f;
+    [SerializeField] private float approachOffsetChangeTime = 2f;
+    [SerializeField] private float sprintChance = 0.5f;
+    [SerializeField] private float flankAngleThreshold = 40f;
 
     private bool dying;
     private float deathTimer;
@@ -129,6 +143,18 @@ public class Strzelacz : MonoBehaviour, IEnemy
     private NavMeshPath pathCache;
     private Vector3 lastStuckCheckPos;
     private float stuckTimer;
+
+    private enum CombatState { Approach, StrafeAttack, Reposition, Flank }
+    private CombatState combatState;
+    private Vector3 currentMoveTarget;
+    private float strafeChangeTimer;
+    private float repositionTimer;
+    private float flankCheckTimer;
+    private int strafeDir;
+    private float approachSide;
+    private float approachSideTimer;
+    private bool sprintReposition;
+    private float[] flankAngleBuffer = new float[32];
 
     public void InitAgent()
     {
@@ -226,6 +252,12 @@ public class Strzelacz : MonoBehaviour, IEnemy
     {
         active = true;
         lastStuckCheckPos = transform.position;
+        combatState = CombatState.Approach;
+        repositionTimer = Random.Range(minRepositionTime, maxRepositionTime);
+        flankCheckTimer = 1f;
+        strafeDir = Random.value > 0.5f ? 1 : -1;
+        approachSide = Random.value > 0.5f ? 1f : -1f;
+        approachSideTimer = approachOffsetChangeTime;
     }
 
     public void TakeDamage(float damage)
@@ -233,7 +265,10 @@ public class Strzelacz : MonoBehaviour, IEnemy
         if (!hitboxesEnabled) return;
         health -= damage;
         if (damage > 0f)
+        {
             TriggerWobble();
+            TryDodgeOnHit();
+        }
         if (health <= 0f)
             Die();
     }
@@ -244,6 +279,15 @@ public class Strzelacz : MonoBehaviour, IEnemy
         if (damage > 0f)
             SpawnHitParticle(hitPoint, hitNormal);
         TakeDamage(damage);
+    }
+
+    private void TryDodgeOnHit()
+    {
+        if (dying || rising || !active) return;
+        if (combatState == CombatState.Reposition) return;
+        if (repositionTimer > 0f) return;
+        if (Random.value > dodgeOnHitChance) return;
+        EnterReposition();
     }
 
     private void SpawnHitParticle(Vector3 hitPoint, Vector3 hitNormal)
@@ -500,31 +544,11 @@ public class Strzelacz : MonoBehaviour, IEnemy
         if (dist > detectionRange)
         {
             agent.ResetPath();
+            combatState = CombatState.Approach;
             return;
         }
 
-        bool hasLOS = CheckLineOfSight();
-        bool hasShootLOS = CheckShootLineOfSight();
-        Debug.DrawLine(transform.position + Vector3.up * losHeightOffset, player.position + Vector3.up * playerCenterHeight, hasLOS ? Color.green : Color.red);
-        if (losCheckPoint != null)
-            Debug.DrawLine(losCheckPoint.position, player.position + Vector3.up * playerCenterHeight, hasShootLOS ? Color.blue : Color.yellow);
-        if (dist <= attackRange && hasLOS)
-        {
-            agent.ResetPath();
-            FacePlayer();
-            AimHand();
-            fireTimer -= Time.deltaTime;
-            if (fireTimer <= 0f && hasShootLOS)
-            {
-                Shoot();
-                fireTimer = 1f / fireRate;
-            }
-            return;
-        }
-
-        FaceMovement();
-        AimHand();
-        agent.SetDestination(player.position);
+        UpdateCombatAI(dist);
 
         jumpUpCheckTimer -= Time.deltaTime;
         if (jumpUpCheckTimer <= 0f)
@@ -534,9 +558,294 @@ public class Strzelacz : MonoBehaviour, IEnemy
         }
     }
 
+    private void UpdateCombatAI(float dist)
+    {
+        bool hasLOS = CheckLineOfSight();
+        bool hasShootLOS = CheckShootLineOfSight();
+
+        Debug.DrawLine(transform.position + Vector3.up * losHeightOffset, player.position + Vector3.up * playerCenterHeight, hasLOS ? Color.green : Color.red);
+        if (losCheckPoint != null)
+            Debug.DrawLine(losCheckPoint.position, player.position + Vector3.up * playerCenterHeight, hasShootLOS ? Color.blue : Color.yellow);
+
+        AimHand();
+        repositionTimer -= Time.deltaTime;
+
+        fireTimer -= Time.deltaTime;
+        if (dist <= attackRange && hasShootLOS && fireTimer <= 0f)
+        {
+            Shoot();
+            fireTimer = 1f / fireRate;
+        }
+
+        switch (combatState)
+        {
+            case CombatState.Approach:
+                UpdateApproach(dist, hasLOS, hasShootLOS);
+                break;
+            case CombatState.StrafeAttack:
+                UpdateStrafeAttack(dist, hasLOS, hasShootLOS);
+                break;
+            case CombatState.Reposition:
+                UpdateRepositionState(dist, hasLOS, hasShootLOS);
+                break;
+            case CombatState.Flank:
+                UpdateFlankState(dist, hasLOS, hasShootLOS);
+                break;
+        }
+    }
+
+    private void UpdateApproach(float dist, bool hasLOS, bool hasShootLOS)
+    {
+        if (dist <= attackRange && hasLOS)
+        {
+            EnterStrafeAttack();
+            return;
+        }
+
+        approachSideTimer -= Time.deltaTime;
+        if (approachSideTimer <= 0f)
+        {
+            approachSide = Random.value > 0.5f ? 1f : -1f;
+            approachSideTimer = approachOffsetChangeTime + Random.Range(-0.5f, 0.5f);
+        }
+
+        Vector3 toPlayer = player.position - transform.position;
+        toPlayer.y = 0f;
+        if (toPlayer.sqrMagnitude < 0.01f) return;
+        Vector3 dir = toPlayer.normalized;
+        Vector3 perp = new Vector3(-dir.z, 0f, dir.x);
+        Vector3 target = player.position - dir * attackRange * 0.6f + perp * approachSide * approachOffsetDistance;
+
+        NavMeshHit navHit;
+        if (NavMesh.SamplePosition(target, out navHit, 3f, NavMesh.AllAreas))
+            agent.SetDestination(navHit.position);
+        else
+            agent.SetDestination(player.position);
+
+        agent.speed = agentSpeed;
+        FaceMovement();
+    }
+
+    private void UpdateStrafeAttack(float dist, bool hasLOS, bool hasShootLOS)
+    {
+        if (dist > attackRange * 1.3f || !hasLOS)
+        {
+            combatState = CombatState.Approach;
+            agent.speed = agentSpeed;
+            return;
+        }
+
+        FacePlayer();
+
+        strafeChangeTimer -= Time.deltaTime;
+        if (strafeChangeTimer <= 0f)
+        {
+            PickNewStrafeTarget();
+            strafeChangeTimer = Random.Range(minStrafeChangeTime, maxStrafeChangeTime);
+        }
+
+        agent.SetDestination(currentMoveTarget);
+        agent.speed = agentSpeed * strafeSpeedMultiplier;
+
+        if (repositionTimer <= 0f)
+        {
+            EnterReposition();
+            return;
+        }
+
+        flankCheckTimer -= Time.deltaTime;
+        if (flankCheckTimer <= 0f)
+        {
+            flankCheckTimer = 1f;
+            if (ShouldFlank())
+            {
+                EnterFlank();
+                return;
+            }
+        }
+    }
+
+    private void UpdateRepositionState(float dist, bool hasLOS, bool hasShootLOS)
+    {
+        FacePlayer();
+
+        if (agent.isOnNavMesh && !agent.pathPending && agent.remainingDistance < 1.5f)
+        {
+            if (dist <= attackRange && hasLOS)
+                EnterStrafeAttack();
+            else
+                combatState = CombatState.Approach;
+        }
+    }
+
+    private void UpdateFlankState(float dist, bool hasLOS, bool hasShootLOS)
+    {
+        FacePlayer();
+
+        if (agent.isOnNavMesh && !agent.pathPending && agent.remainingDistance < 2f)
+        {
+            if (dist <= attackRange && hasLOS)
+                EnterStrafeAttack();
+            else
+                combatState = CombatState.Approach;
+        }
+    }
+
+    private void EnterStrafeAttack()
+    {
+        combatState = CombatState.StrafeAttack;
+        agent.speed = agentSpeed * strafeSpeedMultiplier;
+        strafeDir = Random.value > 0.5f ? 1 : -1;
+        PickNewStrafeTarget();
+        strafeChangeTimer = Random.Range(minStrafeChangeTime, maxStrafeChangeTime);
+    }
+
+    private void EnterReposition()
+    {
+        combatState = CombatState.Reposition;
+        sprintReposition = Random.value < sprintChance;
+        agent.speed = sprintReposition ? agentSpeed * repositionSprintMultiplier : agentSpeed;
+
+        Vector3 toEnemy = transform.position - player.position;
+        toEnemy.y = 0f;
+        float currentAngle = Mathf.Atan2(toEnemy.z, toEnemy.x);
+        float newAngle = currentAngle + Random.Range(1.2f, 2.5f) * (Random.value > 0.5f ? 1f : -1f);
+        float dist = Random.Range(attackRange * 0.5f, attackRange * 1.2f);
+
+        Vector3 target = player.position + new Vector3(Mathf.Cos(newAngle), 0f, Mathf.Sin(newAngle)) * dist;
+
+        NavMeshHit navHit;
+        if (NavMesh.SamplePosition(target, out navHit, 5f, NavMesh.AllAreas))
+            currentMoveTarget = navHit.position;
+        else
+            currentMoveTarget = transform.position + new Vector3(Random.Range(-1f, 1f), 0f, Random.Range(-1f, 1f)).normalized * 5f;
+
+        if (agent.isOnNavMesh)
+            agent.SetDestination(currentMoveTarget);
+        repositionTimer = Random.Range(minRepositionTime, maxRepositionTime);
+    }
+
+    private void EnterFlank()
+    {
+        combatState = CombatState.Flank;
+        agent.speed = agentSpeed;
+        currentMoveTarget = GetFlankPosition();
+        if (agent.isOnNavMesh)
+            agent.SetDestination(currentMoveTarget);
+    }
+
+    private void PickNewStrafeTarget()
+    {
+        strafeDir = Random.value > 0.3f ? -strafeDir : strafeDir;
+
+        Vector3 toEnemy = transform.position - player.position;
+        toEnemy.y = 0f;
+        float currentAngle = Mathf.Atan2(toEnemy.z, toEnemy.x);
+        float strafeAngle = currentAngle + strafeDir * Random.Range(25f, 65f) * Mathf.Deg2Rad;
+        float dist = Mathf.Clamp(toEnemy.magnitude, attackRange * 0.4f, attackRange);
+
+        Vector3 target = player.position + new Vector3(Mathf.Cos(strafeAngle), 0f, Mathf.Sin(strafeAngle)) * dist;
+
+        NavMeshHit navHit;
+        if (NavMesh.SamplePosition(target, out navHit, 3f, NavMesh.AllAreas))
+            currentMoveTarget = navHit.position;
+        else
+            currentMoveTarget = transform.position + transform.right * strafeDir * 3f;
+
+        if (agent.isOnNavMesh)
+            agent.SetDestination(currentMoveTarget);
+    }
+
+    private bool ShouldFlank()
+    {
+        Strzelacz[] all = FindObjectsByType<Strzelacz>(FindObjectsSortMode.None);
+
+        Vector3 playerPos = player.position;
+        Vector3 toSelf = transform.position - playerPos;
+        toSelf.y = 0f;
+        if (toSelf.sqrMagnitude < 0.1f) return false;
+        float myAngle = Mathf.Atan2(toSelf.z, toSelf.x) * Mathf.Rad2Deg;
+
+        int aliveNearby = 0;
+        float closestAngleDiff = float.MaxValue;
+
+        for (int i = 0; i < all.Length; i++)
+        {
+            if (all[i] == this || all[i].dying) continue;
+
+            Vector3 toOther = all[i].transform.position - playerPos;
+            toOther.y = 0f;
+            if (toOther.sqrMagnitude < 0.1f) continue;
+
+            aliveNearby++;
+            float otherAngle = Mathf.Atan2(toOther.z, toOther.x) * Mathf.Rad2Deg;
+            float diff = Mathf.Abs(Mathf.DeltaAngle(myAngle, otherAngle));
+            if (diff < closestAngleDiff)
+                closestAngleDiff = diff;
+        }
+
+        return aliveNearby >= 1 && closestAngleDiff < flankAngleThreshold;
+    }
+
+    private Vector3 GetFlankPosition()
+    {
+        Strzelacz[] all = FindObjectsByType<Strzelacz>(FindObjectsSortMode.None);
+        int count = 0;
+
+        Vector3 playerPos = player.position;
+
+        for (int i = 0; i < all.Length; i++)
+        {
+            if (all[i] == this || all[i].dying) continue;
+            Vector3 toOther = all[i].transform.position - playerPos;
+            toOther.y = 0f;
+            if (toOther.sqrMagnitude < 0.1f) continue;
+            if (count < flankAngleBuffer.Length)
+                flankAngleBuffer[count++] = Mathf.Atan2(toOther.z, toOther.x);
+        }
+
+        if (count == 0)
+        {
+            PickNewStrafeTarget();
+            return currentMoveTarget;
+        }
+
+        System.Array.Sort(flankAngleBuffer, 0, count);
+
+        float biggestGap = 0f;
+        float gapMid = 0f;
+
+        for (int i = 0; i < count; i++)
+        {
+            int next = (i + 1) % count;
+            float gap = (next == 0)
+                ? (flankAngleBuffer[0] + Mathf.PI * 2f - flankAngleBuffer[i])
+                : (flankAngleBuffer[next] - flankAngleBuffer[i]);
+            if (gap > biggestGap)
+            {
+                biggestGap = gap;
+                gapMid = flankAngleBuffer[i] + gap * 0.5f;
+            }
+        }
+
+        float flankDist = Mathf.Min(Vector3.Distance(transform.position, playerPos), attackRange);
+        Vector3 target = playerPos + new Vector3(Mathf.Cos(gapMid), 0f, Mathf.Sin(gapMid)) * flankDist;
+
+        NavMeshHit navHit;
+        if (NavMesh.SamplePosition(target, out navHit, 5f, NavMesh.AllAreas))
+            return navHit.position;
+
+        PickNewStrafeTarget();
+        return currentMoveTarget;
+    }
+
     private void TryJumpUp()
     {
         if (pathCache == null || traversingLink) return;
+        if (combatState != CombatState.Approach && combatState != CombatState.Reposition)
+        {
+            if (Random.value > jumpUpChance) return;
+        }
 
         float playerHeightDiff = player.position.y - transform.position.y;
 

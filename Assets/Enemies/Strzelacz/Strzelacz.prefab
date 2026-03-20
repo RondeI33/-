@@ -1268,7 +1268,18 @@ MonoBehaviour:
   jumpUpMaxHeight: 3
   jumpUpCheckInterval: 0.5
   jumpUpDuration: 0.6
-  jumpUpLandingOffset: 2
+  jumpUpChance: 0.1
+  strafeSpeedMultiplier: 0.75
+  repositionSprintMultiplier: 1.5
+  minStrafeChangeTime: 0.5
+  maxStrafeChangeTime: 1.5
+  minRepositionTime: 2
+  maxRepositionTime: 5
+  dodgeOnHitChance: 0.33
+  approachOffsetDistance: 4
+  approachOffsetChangeTime: 2
+  sprintChance: 0.5
+  flankAngleThreshold: 40
 --- !u!82 &4778021417005630919
 AudioSource:
   m_ObjectHideFlags: 0

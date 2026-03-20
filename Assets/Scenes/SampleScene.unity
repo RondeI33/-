@@ -7793,7 +7793,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ProjectileShooter
   projectilePrefab: {fileID: 2033986261789412172, guid: 3fa331fee2400aa40b094f8740b47ef6, type: 3}
   damage: 25
-  speed: 12
+  speed: 67
   maxDistance: 200
   spreadAngle: 3
 --- !u!114 &441027932
@@ -19853,6 +19853,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1afcc10f473dc3149be50b56fe424c35, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RoomGenerator
+  useRandomSeed: 1
+  seed: 0
   minRoomCount: 6
   maxRoomCount: 7
   startRoomPrefab: {fileID: 4908608673924988208, guid: 43a016ccf097fbf4d886dca567866c8a, type: 3}
@@ -19870,6 +19872,7 @@ MonoBehaviour:
   overlapWindow: 2
   connectionSnapThreshold: 0.5
   mainChainFraction: 0.6
+  loopConnectionDistance: 4
 --- !u!114 &999017303
 MonoBehaviour:
   m_ObjectHideFlags: 0

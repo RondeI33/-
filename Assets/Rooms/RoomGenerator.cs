@@ -5,6 +5,8 @@ using Unity.AI.Navigation;
 
 public class RoomGenerator : MonoBehaviour
 {
+    [SerializeField] private bool useRandomSeed = true;
+    [SerializeField] private int seed;
     [SerializeField] private int minRoomCount = 45;
     [SerializeField] private int maxRoomCount = 50;
     [SerializeField] private GameObject startRoomPrefab;
@@ -19,6 +21,9 @@ public class RoomGenerator : MonoBehaviour
     [SerializeField] private int overlapWindow = 2;
     [SerializeField] private float connectionSnapThreshold = 0.5f;
     [SerializeField] private float mainChainFraction = 0.6f;
+    [SerializeField] private float loopConnectionDistance = 2f;
+
+    public int CurrentSeed => seed;
 
     private RoomActivator roomActivator;
     private GameObject startRoom;
@@ -28,6 +33,8 @@ public class RoomGenerator : MonoBehaviour
 
     private List<GameObject> allRooms = new List<GameObject>();
     private List<List<Bounds>> placedMultiBounds = new List<List<Bounds>>();
+    private HashSet<Transform> loopConnectedPoints = new HashSet<Transform>();
+    private List<KeyValuePair<GameObject, GameObject>> loopAdjacency = new List<KeyValuePair<GameObject, GameObject>>();
 
     private struct PlacedRoom
     {
@@ -112,30 +119,32 @@ public class RoomGenerator : MonoBehaviour
     private Transform GetFarthestPoint(GameObject room, Transform from, bool mainOnly)
     {
         List<Transform> pts = mainOnly ? GetMainPoints(room) : GetAllPoints(room);
-        Transform farthest = null;
-        float best = -1f;
+        List<Transform> candidates = new List<Transform>();
+
         for (int i = 0; i < pts.Count; i++)
         {
             if (pts[i] == from) continue;
-            float d = from != null ? Vector3.Distance(from.position, pts[i].position) : 0f;
-            if (d > best) { best = d; farthest = pts[i]; }
+            candidates.Add(pts[i]);
         }
-        if (farthest == null)
+
+        if (candidates.Count == 0)
         {
             List<Transform> all = GetAllPoints(room);
             for (int i = 0; i < all.Count; i++)
             {
                 if (all[i] == from) continue;
-                float d = from != null ? Vector3.Distance(from.position, all[i].position) : 0f;
-                if (d > best) { best = d; farthest = all[i]; }
+                candidates.Add(all[i]);
             }
         }
-        if (farthest == null)
+
+        if (candidates.Count == 0)
         {
             List<Transform> all = GetAllPoints(room);
-            if (all.Count > 0) farthest = all[0];
+            if (all.Count > 0) return all[0];
+            return null;
         }
-        return farthest;
+
+        return candidates[Random.Range(0, candidates.Count)];
     }
 
     private void AlignRoom(GameObject room, Transform roomEntry, Transform targetExit)
@@ -150,39 +159,51 @@ public class RoomGenerator : MonoBehaviour
     {
         List<Transform> points = GetMainPoints(room);
         usedEntry = null;
-        Shuffle(points);
+        List<Transform> validEntries = new List<Transform>();
         for (int i = 0; i < points.Count; i++)
         {
             AlignRoom(room, points[i], previousExit);
-            if (!OverlapsNearby(GetMultiBounds(room), newChainIndex)) { usedEntry = points[i]; return true; }
+            if (!OverlapsNearby(GetMultiBounds(room), newChainIndex))
+                validEntries.Add(points[i]);
         }
-        return false;
+        if (validEntries.Count == 0) return false;
+        usedEntry = validEntries[Random.Range(0, validEntries.Count)];
+        AlignRoom(room, usedEntry, previousExit);
+        return true;
     }
 
     private bool TryPlaceAny(GameObject room, Transform previousExit, int newChainIndex, out Transform usedEntry)
     {
         List<Transform> points = GetAllPoints(room);
         usedEntry = null;
-        Shuffle(points);
+        List<Transform> validEntries = new List<Transform>();
         for (int i = 0; i < points.Count; i++)
         {
             AlignRoom(room, points[i], previousExit);
-            if (!OverlapsNearby(GetMultiBounds(room), newChainIndex)) { usedEntry = points[i]; return true; }
+            if (!OverlapsNearby(GetMultiBounds(room), newChainIndex))
+                validEntries.Add(points[i]);
         }
-        return false;
+        if (validEntries.Count == 0) return false;
+        usedEntry = validEntries[Random.Range(0, validEntries.Count)];
+        AlignRoom(room, usedEntry, previousExit);
+        return true;
     }
 
     private bool TryPlaceBranch(GameObject room, Transform previousExit, int parentBoundsIdx, out Transform usedEntry)
     {
         List<Transform> points = GetAllPoints(room);
         usedEntry = null;
-        Shuffle(points);
+        List<Transform> validEntries = new List<Transform>();
         for (int i = 0; i < points.Count; i++)
         {
             AlignRoom(room, points[i], previousExit);
-            if (!OverlapsAll(GetMultiBounds(room), parentBoundsIdx)) { usedEntry = points[i]; return true; }
+            if (!OverlapsAll(GetMultiBounds(room), parentBoundsIdx))
+                validEntries.Add(points[i]);
         }
-        return false;
+        if (validEntries.Count == 0) return false;
+        usedEntry = validEntries[Random.Range(0, validEntries.Count)];
+        AlignRoom(room, usedEntry, previousExit);
+        return true;
     }
 
     private static void Shuffle<T>(List<T> list)
@@ -209,24 +230,15 @@ public class RoomGenerator : MonoBehaviour
 
     public IEnumerator Generate()
     {
+        if (useRandomSeed)
+            seed = System.Environment.TickCount ^ System.DateTime.Now.Millisecond;
+        Random.InitState(seed);
+
         int totalRoomBudget = Random.Range(minRoomCount, maxRoomCount + 1);
         int maxFullRetries = 67;
 
         startRoom = Instantiate(startRoomPrefab, transform.position, transform.rotation);
         startMultiBounds = GetMultiBounds(startRoom);
-
-        GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
-        if (playerObj != null)
-        {
-            Transform spawnPoint = startRoom.transform.Find("Start");
-            if (spawnPoint != null)
-            {
-                CharacterController cc = playerObj.GetComponent<CharacterController>();
-                if (cc != null) cc.enabled = false;
-                playerObj.transform.position = spawnPoint.position;
-                if (cc != null) cc.enabled = true;
-            }
-        }
 
         Transform startExit = startRoom.transform.Find("Exit");
         hasTutorialRoom = tutorialRoomPrefab != null;
@@ -278,17 +290,36 @@ public class RoomGenerator : MonoBehaviour
             if (remainingBudget > 0)
                 yield return StartCoroutine(BuildBranchesRecursive(remainingBudget));
 
+            FindLoopConnections();
             BuildAllNavMeshes();
             InitAllDoors();
             InitRoomActivator();
+            TeleportPlayerToStart();
             if (loadingScreen != null) loadingScreen.StartFadeOut();
             yield break;
         }
 
+        FindLoopConnections();
         BuildAllNavMeshes();
         InitAllDoors();
         InitRoomActivator();
+        TeleportPlayerToStart();
         if (loadingScreen != null) loadingScreen.StartFadeOut();
+    }
+
+    private void TeleportPlayerToStart()
+    {
+        if (startRoom == null) return;
+        startRoom.SetActive(true);
+        GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
+        if (playerObj == null) return;
+        Transform spawnPoint = startRoom.transform.Find("Start");
+        if (spawnPoint == null) return;
+        CharacterController cc = playerObj.GetComponent<CharacterController>();
+        if (cc != null) cc.enabled = false;
+        playerObj.transform.position = spawnPoint.position;
+        if (cc != null) cc.enabled = true;
+        if (roomActivator != null) roomActivator.OnPlayerEnteredRoom(startRoom);
     }
 
     private Transform GetLastMainExit()
@@ -444,7 +475,7 @@ public class RoomGenerator : MonoBehaviour
     {
         int roomsLeft = budget;
         int branchTreasuresLeft = treasureRoomsOnBranches;
-        Queue<BranchTask> branchQueue = new Queue<BranchTask>();
+        List<BranchTask> branchTasks = new List<BranchTask>();
 
         for (int i = 0; i < mainChain.Count; i++)
         {
@@ -452,17 +483,21 @@ public class RoomGenerator : MonoBehaviour
             int boundsIdx = i + 1;
             List<Transform> openPts = GetOpenConnectionPoints(mainChain[i].go, mainChain[i].usedEntry);
             for (int j = 0; j < openPts.Count; j++)
-                branchQueue.Enqueue(new BranchTask { exitPoint = openPts[j], parentBoundsIdx = boundsIdx });
+                branchTasks.Add(new BranchTask { exitPoint = openPts[j], parentBoundsIdx = boundsIdx });
         }
 
-        while (branchQueue.Count > 0 && roomsLeft > 0)
+        Shuffle(branchTasks);
+
+        while (branchTasks.Count > 0 && roomsLeft > 0)
         {
-            BranchTask task = branchQueue.Dequeue();
+            int taskIdx = Random.Range(0, branchTasks.Count);
+            BranchTask task = branchTasks[taskIdx];
+            branchTasks.RemoveAt(taskIdx);
 
             bool tryTreasureHere = branchTreasuresLeft > 0
                 && treasureRoomPrefabs != null
                 && treasureRoomPrefabs.Length > 0
-                && Random.Range(0, branchQueue.Count + 1) < branchTreasuresLeft;
+                && Random.Range(0, branchTasks.Count + 1) < branchTreasuresLeft;
 
             if (tryTreasureHere)
             {
@@ -487,7 +522,7 @@ public class RoomGenerator : MonoBehaviour
                         {
                             List<Transform> openPts = GetOpenConnectionPoints(tRoom, usedEntry);
                             for (int j = 0; j < openPts.Count; j++)
-                                branchQueue.Enqueue(new BranchTask { exitPoint = openPts[j], parentBoundsIdx = newBoundsIdx });
+                                branchTasks.Add(new BranchTask { exitPoint = openPts[j], parentBoundsIdx = newBoundsIdx });
                         }
                         goto nextTask;
                     }
@@ -516,7 +551,7 @@ public class RoomGenerator : MonoBehaviour
                         {
                             List<Transform> openPts = GetOpenConnectionPoints(newRoom, usedEntry);
                             for (int j = 0; j < openPts.Count; j++)
-                                branchQueue.Enqueue(new BranchTask { exitPoint = openPts[j], parentBoundsIdx = newBoundsIdx });
+                                branchTasks.Add(new BranchTask { exitPoint = openPts[j], parentBoundsIdx = newBoundsIdx });
                         }
 
                         break;
@@ -570,6 +605,76 @@ public class RoomGenerator : MonoBehaviour
         room.SetActive(wasActive);
         Shuffle(points);
         return points;
+    }
+
+    private void FindLoopConnections()
+    {
+        loopConnectedPoints.Clear();
+        loopAdjacency.Clear();
+
+        List<GameObject> everyRoom = new List<GameObject>();
+        if (startRoom != null) everyRoom.Add(startRoom);
+        everyRoom.AddRange(allRooms);
+
+        List<(Transform point, GameObject room)> openPoints = new List<(Transform, GameObject)>();
+
+        for (int i = 0; i < everyRoom.Count; i++)
+        {
+            if (everyRoom[i] == null) continue;
+            bool wasActive = everyRoom[i].activeSelf;
+            everyRoom[i].SetActive(true);
+            List<Transform> pts = GetAllPoints(everyRoom[i]);
+
+            for (int j = 0; j < pts.Count; j++)
+            {
+                bool connected = false;
+                for (int r = 0; r < everyRoom.Count; r++)
+                {
+                    if (r == i || everyRoom[r] == null) continue;
+                    bool otherWas = everyRoom[r].activeSelf;
+                    everyRoom[r].SetActive(true);
+                    List<Transform> otherPts = GetAllPoints(everyRoom[r]);
+                    for (int k = 0; k < otherPts.Count; k++)
+                    {
+                        if (Vector3.Distance(pts[j].position, otherPts[k].position) <= connectionSnapThreshold)
+                        {
+                            connected = true;
+                            break;
+                        }
+                    }
+                    everyRoom[r].SetActive(otherWas);
+                    if (connected) break;
+                }
+                if (!connected)
+                    openPoints.Add((pts[j], everyRoom[i]));
+            }
+
+            everyRoom[i].SetActive(wasActive);
+        }
+
+        HashSet<int> claimed = new HashSet<int>();
+        for (int a = 0; a < openPoints.Count; a++)
+        {
+            if (claimed.Contains(a)) continue;
+            for (int b = a + 1; b < openPoints.Count; b++)
+            {
+                if (claimed.Contains(b)) continue;
+                if (openPoints[a].room == openPoints[b].room) continue;
+
+                float dist = Vector3.Distance(openPoints[a].point.position, openPoints[b].point.position);
+                if (dist > loopConnectionDistance) continue;
+
+                float dot = Vector3.Dot(openPoints[a].point.forward, openPoints[b].point.forward);
+                if (dot > -0.5f) continue;
+
+                loopConnectedPoints.Add(openPoints[a].point);
+                loopConnectedPoints.Add(openPoints[b].point);
+                loopAdjacency.Add(new KeyValuePair<GameObject, GameObject>(openPoints[a].room, openPoints[b].room));
+                claimed.Add(a);
+                claimed.Add(b);
+                break;
+            }
+        }
     }
 
     private void BuildAllNavMeshes()
@@ -641,7 +746,8 @@ public class RoomGenerator : MonoBehaviour
                     }
                     if (matched) break;
                 }
-                if (!matched) deadEnds.Add(myPoints[j]);
+                if (!matched && !loopConnectedPoints.Contains(myPoints[j]))
+                    deadEnds.Add(myPoints[j]);
             }
 
             doorsComp.Init(deadEnds);
@@ -658,7 +764,7 @@ public class RoomGenerator : MonoBehaviour
         if (roomActivator == null)
             roomActivator = gameObject.AddComponent<RoomActivator>();
 
-        roomActivator.Init(everyRoom, connectionSnapThreshold);
+        roomActivator.Init(everyRoom, connectionSnapThreshold, loopAdjacency);
     }
 
     private void ClearAll()
@@ -671,6 +777,8 @@ public class RoomGenerator : MonoBehaviour
         placedMultiBounds.Clear();
         failedPrefabsPerStep.Clear();
         treasureInsertIndices.Clear();
+        loopConnectedPoints.Clear();
+        loopAdjacency.Clear();
     }
 
     public void ClearRooms()
