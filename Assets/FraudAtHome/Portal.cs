@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 public class Portal : MonoBehaviour
@@ -79,7 +79,7 @@ public class Portal : MonoBehaviour
             PortalTraveller traveller = trackedTravellers[i];
             Transform travellerT = traveller.transform;
 
-            if (Time.time - traveller.lastTeleportTime < 0.1f)
+            if (Time.time - traveller.lastTeleportTime < 0.01f)
             {
                 trackedTravellers.RemoveAt(i);
                 i--;
@@ -332,7 +332,7 @@ public class Portal : MonoBehaviour
         var traveller = other.GetComponent<PortalTraveller>();
         if (traveller == null) return;
         if (!CanTraverse(traveller)) return;
-        if (Time.time - traveller.lastTeleportTime < 0.1f) return;
+        if (Time.time - traveller.lastTeleportTime < 0.01f) return;
         OnTravellerEnterPortal(traveller);
     }
 
@@ -342,7 +342,7 @@ public class Portal : MonoBehaviour
         if (traveller == null) return;
         if (trackedTravellers.Contains(traveller)) return;
         if (!CanTraverse(traveller)) return;
-        if (Time.time - traveller.lastTeleportTime < 0.1f) return;
+        if (Time.time - traveller.lastTeleportTime < 0.01f) return;
         OnTravellerEnterPortal(traveller);
     }
 
@@ -370,12 +370,19 @@ public class Portal : MonoBehaviour
 
     public static bool TryPassThrough(PortalTraveller traveller, Vector3 from, Vector3 to)
     {
+        return TryPassThrough(traveller, from, to, out _);
+    }
+
+    public static bool TryPassThrough(PortalTraveller traveller, Vector3 from, Vector3 to, out float crossDistance)
+    {
+        crossDistance = 0f;
+
         for (int i = 0; i < activePortals.Count; i++)
         {
             Portal p = activePortals[i];
             if (!p.IsLinked) continue;
             if (!p.CanTraverse(traveller)) continue;
-            if (Time.time - traveller.lastTeleportTime < 0.1f) continue;
+            if (Time.time - traveller.lastTeleportTime < 0.01f) continue;
 
             Vector3 portalPos = p.transform.position;
             Vector3 portalNormal = p.transform.forward;
@@ -393,6 +400,8 @@ public class Portal : MonoBehaviour
             float flatDist = Vector3.ProjectOnPlane(intersection - portalPos, portalNormal).magnitude;
             if (flatDist > maxPortalRadius)
                 continue;
+
+            crossDistance = Vector3.Distance(from, intersection);
 
             var m = p.linkedPortal.transform.localToWorldMatrix * flipMatrix * p.transform.worldToLocalMatrix * traveller.transform.localToWorldMatrix;
             traveller.Teleport(p.transform, p.linkedPortal.transform, m.GetColumn(3), m.rotation);
