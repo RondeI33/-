@@ -21,6 +21,10 @@ public class WeaponReloadController : MonoBehaviour
     [SerializeField] float reloadDipSpeed = 6f;
     [SerializeField] float reloadDipReturnSpeed = 4f;
 
+    [Header("Reload Sound")]
+    [SerializeField] private AudioSource realoadAudioSource;
+    [SerializeField] private AudioClip reloadSound;
+
     private WeaponController weaponController;
     private PlayerInput playerInput;
     private InputAction reloadAction;
@@ -60,6 +64,7 @@ public class WeaponReloadController : MonoBehaviour
 
     void Start()
     {
+        reloadDuration = reloadClip.length / reloadAnimationSpeed;
         currentAmmo = maxAmmo;
 
         if (dipTarget != null)
@@ -105,7 +110,7 @@ public class WeaponReloadController : MonoBehaviour
 
                 if (reloadAnimation != null && reloadClip != null)
                 {
-                    float animTime = (reloadTimer * reloadAnimationSpeed) % reloadClip.length;
+                    float animTime = Mathf.Clamp(reloadTimer * (reloadClip.length / reloadDuration), 0f, reloadClip.length);
                     reloadAnimation[reloadAnimationName].time = animTime;
                     reloadAnimation[reloadAnimationName].speed = 0f;
                     reloadAnimation.Sample();
@@ -124,6 +129,8 @@ public class WeaponReloadController : MonoBehaviour
         if (reloading) return;
         if (currentAmmo >= maxAmmo) return;
         if (reloadAnimation == null || reloadClip == null) return;
+
+        PlaySound(realoadAudioSource, reloadSound);
 
         reloading = true;
         reloadTimer = 0f;
@@ -216,5 +223,13 @@ public class WeaponReloadController : MonoBehaviour
         currentAmmo = Mathf.Clamp(ammo, 0, maxAmmo);
         BroadcastAmmoChanged();
         OnAmmoChanged?.Invoke();
+    }
+
+    private void PlaySound(AudioSource source, AudioClip clip)
+    {
+        if (source == null || clip == null) return;
+        //source.pitch = pitch < 0f ? Random.Range(pitchMin, pitchMax) : pitch;
+        //source.clip = clip;
+        source.PlayOneShot(clip);
     }
 }

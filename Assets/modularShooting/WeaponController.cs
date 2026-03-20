@@ -6,6 +6,7 @@ using Random = UnityEngine.Random;
 public class WeaponController : MonoBehaviour
 {
     [SerializeField] Transform firePoint;
+    [SerializeField] ParticleSystem fireParticle;
     [SerializeField] Camera playerCamera;
     [SerializeField] LayerMask hitLayers;
     [SerializeField] float fireRate = 0.15f;
@@ -26,6 +27,12 @@ public class WeaponController : MonoBehaviour
 
     [Header("Weakpoint")]
     [SerializeField] float weakpointMultiplier = 2f;
+
+    [Header("Sound")]
+    [SerializeField] private AudioSource shootAudioSource;
+    [SerializeField] private AudioClip shootSound;
+    [SerializeField] private float pitchMin = 0.9f;
+    [SerializeField] private float pitchMax = 1.1f;
 
     [Header("Hit Feedback")]
     [SerializeField] private AudioSource hitAudioSource;
@@ -133,7 +140,11 @@ public class WeaponController : MonoBehaviour
 
     public void Fire()
     {
+
         RefreshModuleCache();
+
+        fireParticle.Play();
+        PlaySound(shootAudioSource, shootSound);
 
         int activeSources = 0;
         for (int i = 0; i < cachedSources.Length; i++)
@@ -442,5 +453,14 @@ public class WeaponController : MonoBehaviour
         decalFaders[decalIndex].Init(decalMats[decalIndex], color, fadeDuration, target, localPos, localRot);
         decalSpawnTimes[decalIndex] = Time.time;
         decalIndex = (decalIndex + 1) % maxDecals;
+    }
+
+    private void PlaySound(AudioSource source, AudioClip clip, float pitch = -1f)
+    {
+        if (source == null || clip == null) return;
+        source.pitch = pitch < 0f ? Random.Range(pitchMin, pitchMax) : pitch;
+        source.clip = clip;
+        source.PlayOneShot(clip);
+        //source.Play();
     }
 }
