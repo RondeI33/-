@@ -140,7 +140,6 @@ public class WeaponController : MonoBehaviour
 
     public void Fire()
     {
-
         RefreshModuleCache();
 
         fireParticle.Play();

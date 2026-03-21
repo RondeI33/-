@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using Unity.AI.Navigation;
@@ -36,6 +36,12 @@ public class RoomGenerator : MonoBehaviour
     private HashSet<Transform> loopConnectedPoints = new HashSet<Transform>();
     private List<KeyValuePair<GameObject, GameObject>> loopAdjacency = new List<KeyValuePair<GameObject, GameObject>>();
 
+    // ── Adjacency built at placement time ──────────────────────────────────────
+    // Key = room GameObject, Value = list of directly connected room GameObjects.
+    // startRoom is included once it's known.
+    private Dictionary<GameObject, List<GameObject>> roomAdjacency
+        = new Dictionary<GameObject, List<GameObject>>();
+
     private struct PlacedRoom
     {
         public GameObject go;
@@ -46,8 +52,27 @@ public class RoomGenerator : MonoBehaviour
 
     private List<PlacedRoom> mainChain = new List<PlacedRoom>();
     private Dictionary<int, HashSet<int>> failedPrefabsPerStep = new Dictionary<int, HashSet<int>>();
-
     private HashSet<int> treasureInsertIndices = new HashSet<int>();
+
+    // ── Adjacency helpers ───────────────────────────────────────────────────────
+
+    private void EnsureAdjacencyEntry(GameObject room)
+    {
+        if (room != null && !roomAdjacency.ContainsKey(room))
+            roomAdjacency[room] = new List<GameObject>();
+    }
+
+    /// <summary>Register a bidirectional connection between two rooms.</summary>
+    private void ConnectRooms(GameObject a, GameObject b)
+    {
+        if (a == null || b == null) return;
+        EnsureAdjacencyEntry(a);
+        EnsureAdjacencyEntry(b);
+        if (!roomAdjacency[a].Contains(b)) roomAdjacency[a].Add(b);
+        if (!roomAdjacency[b].Contains(a)) roomAdjacency[b].Add(a);
+    }
+
+    // ── Bounds helpers ──────────────────────────────────────────────────────────
 
     private List<Bounds> GetMultiBounds(GameObject room)
     {
@@ -99,6 +124,8 @@ public class RoomGenerator : MonoBehaviour
         return false;
     }
 
+    // ── Connection-point helpers ────────────────────────────────────────────────
+
     private List<Transform> GetConnectionPoints(GameObject room, bool mainOnly)
     {
         List<Transform> points = new List<Transform>();
@@ -120,28 +147,20 @@ public class RoomGenerator : MonoBehaviour
     {
         List<Transform> pts = mainOnly ? GetMainPoints(room) : GetAllPoints(room);
         List<Transform> candidates = new List<Transform>();
-
         for (int i = 0; i < pts.Count; i++)
-        {
-            if (pts[i] == from) continue;
-            candidates.Add(pts[i]);
-        }
+            if (pts[i] != from) candidates.Add(pts[i]);
 
         if (candidates.Count == 0)
         {
             List<Transform> all = GetAllPoints(room);
             for (int i = 0; i < all.Count; i++)
-            {
-                if (all[i] == from) continue;
-                candidates.Add(all[i]);
-            }
+                if (all[i] != from) candidates.Add(all[i]);
         }
 
         if (candidates.Count == 0)
         {
             List<Transform> all = GetAllPoints(room);
-            if (all.Count > 0) return all[0];
-            return null;
+            return all.Count > 0 ? all[0] : null;
         }
 
         return candidates[Random.Range(0, candidates.Count)];
@@ -219,7 +238,6 @@ public class RoomGenerator : MonoBehaviour
     {
         HashSet<int> result = new HashSet<int>();
         if (maxIdx < minIdx || count <= 0) return result;
-
         List<int> pool = new List<int>();
         for (int i = minIdx; i <= maxIdx; i++) pool.Add(i);
         Shuffle(pool);
@@ -227,6 +245,8 @@ public class RoomGenerator : MonoBehaviour
             result.Add(pool[i]);
         return result;
     }
+
+    // ── Generate ────────────────────────────────────────────────────────────────
 
     public IEnumerator Generate()
     {
@@ -239,6 +259,7 @@ public class RoomGenerator : MonoBehaviour
 
         startRoom = Instantiate(startRoomPrefab, transform.position, transform.rotation);
         startMultiBounds = GetMultiBounds(startRoom);
+        EnsureAdjacencyEntry(startRoom);
 
         Transform startExit = startRoom.transform.Find("Exit");
         hasTutorialRoom = tutorialRoomPrefab != null;
@@ -249,6 +270,7 @@ public class RoomGenerator : MonoBehaviour
         for (int retry = 0; retry < maxFullRetries; retry++)
         {
             ClearAll();
+            EnsureAdjacencyEntry(startRoom);
             placedMultiBounds.Add(startMultiBounds);
 
             int firstValidIdx = hasTutorialRoom ? 2 : 1;
@@ -267,6 +289,8 @@ public class RoomGenerator : MonoBehaviour
                 tutRoom.SetActive(false);
                 mainChain.Add(new PlacedRoom { go = tutRoom, usedEntry = tutEntrance, prefabIndex = -1 });
                 allRooms.Add(tutRoom);
+                // startRoom → tutRoom
+                ConnectRooms(startRoom, tutRoom);
             }
 
             int firstIdx = Random.Range(0, roomPrefabs.Length);
@@ -279,6 +303,10 @@ public class RoomGenerator : MonoBehaviour
             firstRoom.SetActive(false);
             mainChain.Add(new PlacedRoom { go = firstRoom, usedEntry = firstEntry, prefabIndex = firstIdx });
             allRooms.Add(firstRoom);
+
+            // Connect firstRoom to whatever is before it in the chain.
+            GameObject prevRoom = hasTutorialRoom ? mainChain[0].go : startRoom;
+            ConnectRooms(prevRoom, firstRoom);
 
             yield return StartCoroutine(BuildMainChain(mainChainTarget));
             if (!buildChainResult) continue;
@@ -299,6 +327,7 @@ public class RoomGenerator : MonoBehaviour
             yield break;
         }
 
+        // Fallback if all retries failed.
         FindLoopConnections();
         BuildAllNavMeshes();
         InitAllDoors();
@@ -328,6 +357,8 @@ public class RoomGenerator : MonoBehaviour
         return GetFarthestPoint(last.go, last.usedEntry, true);
     }
 
+    // ── Main chain ──────────────────────────────────────────────────────────────
+
     private IEnumerator BuildMainChain(int targetCount)
     {
         buildChainResult = false;
@@ -340,8 +371,11 @@ public class RoomGenerator : MonoBehaviour
         {
             int step = mainChain.Count;
             Transform prevExit = GetLastMainExit();
+            GameObject parentRoom = mainChain[mainChain.Count - 1].go;
 
-            if (treasureInsertIndices.Contains(step) && treasureRoomPrefabs != null && treasureRoomPrefabs.Length > 0)
+            // ── Treasure room slot? ────────────────────────────────────────────
+            if (treasureInsertIndices.Contains(step)
+                && treasureRoomPrefabs != null && treasureRoomPrefabs.Length > 0)
             {
                 int newChainIndex = placedMultiBounds.Count;
                 List<int> treasureCandidates = new List<int>();
@@ -359,6 +393,7 @@ public class RoomGenerator : MonoBehaviour
                         placedMultiBounds.Add(GetMultiBounds(tRoom));
                         mainChain.Add(new PlacedRoom { go = tRoom, usedEntry = usedEntry, prefabIndex = prefabIndex, isTreasure = true });
                         allRooms.Add(tRoom);
+                        ConnectRooms(parentRoom, tRoom);
                         treasurePlaced = true;
                         break;
                     }
@@ -368,6 +403,7 @@ public class RoomGenerator : MonoBehaviour
                 if (treasurePlaced) { yield return null; continue; }
             }
 
+            // ── Regular room ───────────────────────────────────────────────────
             if (!failedPrefabsPerStep.ContainsKey(step))
                 failedPrefabsPerStep[step] = new HashSet<int>();
             HashSet<int> failedHere = failedPrefabsPerStep[step];
@@ -382,6 +418,8 @@ public class RoomGenerator : MonoBehaviour
                     failedPrefabsPerStep[last] = new HashSet<int>();
                 failedPrefabsPerStep[last].Add(mainChain[last].prefabIndex);
 
+                // Remove adjacency for the room being backtracked.
+                RemoveAdjacency(mainChain[last].go);
                 Destroy(mainChain[last].go);
                 allRooms.Remove(mainChain[last].go);
                 mainChain.RemoveAt(last);
@@ -411,6 +449,7 @@ public class RoomGenerator : MonoBehaviour
                     placedMultiBounds.Add(GetMultiBounds(newRoom));
                     mainChain.Add(new PlacedRoom { go = newRoom, usedEntry = usedEntry, prefabIndex = prefabIndex });
                     allRooms.Add(newRoom);
+                    ConnectRooms(parentRoom, newRoom);
                     placed = true;
                     break;
                 }
@@ -425,6 +464,8 @@ public class RoomGenerator : MonoBehaviour
         buildChainResult = true;
     }
 
+    // ── Boss room ───────────────────────────────────────────────────────────────
+
     private IEnumerator PlaceBossRoom()
     {
         buildChainResult = false;
@@ -434,6 +475,7 @@ public class RoomGenerator : MonoBehaviour
         for (int attempt = 0; attempt < maxAttempts; attempt++)
         {
             Transform lastExit = GetLastMainExit();
+            GameObject parentRoom = mainChain[mainChain.Count - 1].go;
             GameObject boss = Instantiate(bossRoomPrefab, Vector3.zero, Quaternion.identity);
             int parentBoundsIdx = placedMultiBounds.Count - 1;
             Transform usedEntry;
@@ -444,6 +486,7 @@ public class RoomGenerator : MonoBehaviour
                 placedMultiBounds.Add(GetMultiBounds(boss));
                 mainChain.Add(new PlacedRoom { go = boss, usedEntry = usedEntry, prefabIndex = -1 });
                 allRooms.Add(boss);
+                ConnectRooms(parentRoom, boss);
                 buildChainResult = true;
                 yield break;
             }
@@ -454,6 +497,7 @@ public class RoomGenerator : MonoBehaviour
             if (mainChain.Count <= minKeep) { buildChainResult = false; yield break; }
 
             int last = mainChain.Count - 1;
+            RemoveAdjacency(mainChain[last].go);
             Destroy(mainChain[last].go);
             allRooms.Remove(mainChain[last].go);
             mainChain.RemoveAt(last);
@@ -465,10 +509,13 @@ public class RoomGenerator : MonoBehaviour
         buildChainResult = false;
     }
 
+    // ── Branches ────────────────────────────────────────────────────────────────
+
     private struct BranchTask
     {
         public Transform exitPoint;
         public int parentBoundsIdx;
+        public GameObject parentRoom;   // ← new: who owns this exit point
     }
 
     private IEnumerator BuildBranchesRecursive(int budget)
@@ -483,7 +530,12 @@ public class RoomGenerator : MonoBehaviour
             int boundsIdx = i + 1;
             List<Transform> openPts = GetOpenConnectionPoints(mainChain[i].go, mainChain[i].usedEntry);
             for (int j = 0; j < openPts.Count; j++)
-                branchTasks.Add(new BranchTask { exitPoint = openPts[j], parentBoundsIdx = boundsIdx });
+                branchTasks.Add(new BranchTask
+                {
+                    exitPoint = openPts[j],
+                    parentBoundsIdx = boundsIdx,
+                    parentRoom = mainChain[i].go
+                });
         }
 
         Shuffle(branchTasks);
@@ -494,6 +546,7 @@ public class RoomGenerator : MonoBehaviour
             BranchTask task = branchTasks[taskIdx];
             branchTasks.RemoveAt(taskIdx);
 
+            // ── Try treasure branch ────────────────────────────────────────────
             bool tryTreasureHere = branchTreasuresLeft > 0
                 && treasureRoomPrefabs != null
                 && treasureRoomPrefabs.Length > 0
@@ -515,6 +568,7 @@ public class RoomGenerator : MonoBehaviour
                         int newBoundsIdx = placedMultiBounds.Count;
                         placedMultiBounds.Add(GetMultiBounds(tRoom));
                         allRooms.Add(tRoom);
+                        ConnectRooms(task.parentRoom, tRoom);
                         roomsLeft--;
                         branchTreasuresLeft--;
 
@@ -522,7 +576,12 @@ public class RoomGenerator : MonoBehaviour
                         {
                             List<Transform> openPts = GetOpenConnectionPoints(tRoom, usedEntry);
                             for (int j = 0; j < openPts.Count; j++)
-                                branchTasks.Add(new BranchTask { exitPoint = openPts[j], parentBoundsIdx = newBoundsIdx });
+                                branchTasks.Add(new BranchTask
+                                {
+                                    exitPoint = openPts[j],
+                                    parentBoundsIdx = newBoundsIdx,
+                                    parentRoom = tRoom
+                                });
                         }
                         goto nextTask;
                     }
@@ -530,6 +589,7 @@ public class RoomGenerator : MonoBehaviour
                 }
             }
 
+            // ── Regular branch ─────────────────────────────────────────────────
             {
                 List<int> candidates = new List<int>();
                 for (int p = 0; p < roomPrefabs.Length; p++) candidates.Add(p);
@@ -545,15 +605,20 @@ public class RoomGenerator : MonoBehaviour
                         int newBoundsIdx = placedMultiBounds.Count;
                         placedMultiBounds.Add(GetMultiBounds(newRoom));
                         allRooms.Add(newRoom);
+                        ConnectRooms(task.parentRoom, newRoom);
                         roomsLeft--;
 
                         if (roomsLeft > 0)
                         {
                             List<Transform> openPts = GetOpenConnectionPoints(newRoom, usedEntry);
                             for (int j = 0; j < openPts.Count; j++)
-                                branchTasks.Add(new BranchTask { exitPoint = openPts[j], parentBoundsIdx = newBoundsIdx });
+                                branchTasks.Add(new BranchTask
+                                {
+                                    exitPoint = openPts[j],
+                                    parentBoundsIdx = newBoundsIdx,
+                                    parentRoom = newRoom
+                                });
                         }
-
                         break;
                     }
                     Destroy(newRoom);
@@ -564,6 +629,8 @@ public class RoomGenerator : MonoBehaviour
             yield return null;
         }
     }
+
+    // ── Open connection points ──────────────────────────────────────────────────
 
     private List<Transform> GetOpenConnectionPoints(GameObject room, Transform usedEntry)
     {
@@ -606,6 +673,8 @@ public class RoomGenerator : MonoBehaviour
         Shuffle(points);
         return points;
     }
+
+    // ── Loop connections ────────────────────────────────────────────────────────
 
     private void FindLoopConnections()
     {
@@ -670,12 +739,18 @@ public class RoomGenerator : MonoBehaviour
                 loopConnectedPoints.Add(openPoints[a].point);
                 loopConnectedPoints.Add(openPoints[b].point);
                 loopAdjacency.Add(new KeyValuePair<GameObject, GameObject>(openPoints[a].room, openPoints[b].room));
+
+                // Register loop connections in our adjacency map too.
+                ConnectRooms(openPoints[a].room, openPoints[b].room);
+
                 claimed.Add(a);
                 claimed.Add(b);
                 break;
             }
         }
     }
+
+    // ── Nav mesh ────────────────────────────────────────────────────────────────
 
     private void BuildAllNavMeshes()
     {
@@ -696,6 +771,8 @@ public class RoomGenerator : MonoBehaviour
             allRooms[i].SetActive(false);
         }
     }
+
+    // ── Doors ───────────────────────────────────────────────────────────────────
 
     private void InitAllDoors()
     {
@@ -755,6 +832,8 @@ public class RoomGenerator : MonoBehaviour
         }
     }
 
+    // ── Room activator ──────────────────────────────────────────────────────────
+
     private void InitRoomActivator()
     {
         List<GameObject> everyRoom = new List<GameObject>();
@@ -764,8 +843,29 @@ public class RoomGenerator : MonoBehaviour
         if (roomActivator == null)
             roomActivator = gameObject.AddComponent<RoomActivator>();
 
-        roomActivator.Init(everyRoom, connectionSnapThreshold, loopAdjacency);
+        // Pass the adjacency map we built at placement time — no re-computation.
+        roomActivator.Init(everyRoom, roomAdjacency);
     }
+
+    // ── Adjacency cleanup on backtrack ──────────────────────────────────────────
+
+    /// <summary>
+    /// Remove a room from the adjacency map entirely and strip it from its neighbors' lists.
+    /// Called when backtracking destroys a room.
+    /// </summary>
+    private void RemoveAdjacency(GameObject room)
+    {
+        if (room == null || !roomAdjacency.ContainsKey(room)) return;
+        List<GameObject> neighbors = roomAdjacency[room];
+        for (int i = 0; i < neighbors.Count; i++)
+        {
+            if (neighbors[i] != null && roomAdjacency.ContainsKey(neighbors[i]))
+                roomAdjacency[neighbors[i]].Remove(room);
+        }
+        roomAdjacency.Remove(room);
+    }
+
+    // ── Clear ───────────────────────────────────────────────────────────────────
 
     private void ClearAll()
     {
@@ -779,6 +879,7 @@ public class RoomGenerator : MonoBehaviour
         treasureInsertIndices.Clear();
         loopConnectedPoints.Clear();
         loopAdjacency.Clear();
+        roomAdjacency.Clear();
     }
 
     public void ClearRooms()

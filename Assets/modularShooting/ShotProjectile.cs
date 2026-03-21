@@ -10,6 +10,7 @@ public class ShotProjectile : PortalTraveller
     [SerializeField] float speedTrailThreshold = 167f;
     [SerializeField] Color speedTrailColor = new Color(1f, 0.85f, 0.3f, 1f);
     [SerializeField] float speedTrailFadeTime = 0.4f;
+    [SerializeField] float trailSpinSpeed = 600f; // degrees per second; set to 0 to disable
 
     private static readonly int PortalLayerMask = 1 << 2;
     private static readonly Matrix4x4 FlipMatrix = Matrix4x4.Rotate(Quaternion.Euler(0f, 180f, 0f));
@@ -34,9 +35,7 @@ public class ShotProjectile : PortalTraveller
     private Vector3 cameraPosition;
     private bool firstBounce;
 
-    // ADDED: where the crosshair is actually pointing (stored at fire time)
     private Vector3 crosshairAimPoint;
-    // ADDED: true once the bullet has snapped onto the camera ray at 3m
     private bool hasConverged;
 
     void Awake()
@@ -48,11 +47,16 @@ public class ShotProjectile : PortalTraveller
 
     public override void Teleport(Transform fromPortal, Transform toPortal, Vector3 pos, Quaternion rot)
     {
+        // Detach trails BEFORE moving the transform — if they stay attached while
+        // the transform teleports, the renderer draws a streak from the last point
+        // to the new position. Detaching first lets them fade in place at the entry side.
         foreach (var trail in trails)
         {
             trail.emitting = false;
-            trail.Clear();
+            trail.transform.SetParent(null, true);
+            Destroy(trail.gameObject, trail.time > 0f ? trail.time : 1f);
         }
+        trails = new TrailRenderer[0];
 
         Matrix4x4 portalMatrix = toPortal.localToWorldMatrix
             * Matrix4x4.Rotate(Quaternion.Euler(0f, 180f, 0f))
@@ -77,16 +81,46 @@ public class ShotProjectile : PortalTraveller
         spawnPosition = pos;
         trailSegmentStart = pos;
 
-        // ADDED: already flying along the virtual camera ray after a portal
         hasConverged = true;
 
         Physics.SyncTransforms();
         lastTeleportTime = Time.time;
 
-        foreach (var trail in trails)
+        // Detach existing trails so their world-space points linger at the entry
+        // portal and fade naturally. Then spawn fresh trail children at the exit
+        // so the bullet continues with a clean trail — no flash or pop.
+        if (prefabSource != null)
         {
-            trail.Clear();
-            trail.emitting = true;
+            TrailRenderer[] prefabTrails = prefabSource.GetComponentsInChildren<TrailRenderer>();
+            foreach (var trail in trails)
+            {
+                trail.emitting = false;
+                trail.transform.SetParent(null, true);
+                Destroy(trail.gameObject, trail.time > 0f ? trail.time : 1f);
+            }
+            trails = new TrailRenderer[0];
+            foreach (TrailRenderer pt in prefabTrails)
+            {
+                GameObject copy = Instantiate(pt.gameObject, transform);
+                copy.transform.localPosition = pt.transform.localPosition;
+                copy.transform.localRotation = pt.transform.localRotation;
+                TrailRenderer tr = copy.GetComponent<TrailRenderer>();
+                tr.Clear();
+                tr.emitting = false;
+            }
+            trails = GetComponentsInChildren<TrailRenderer>();
+            // Wait one frame before enabling so TrailRenderer doesn't draw a
+            // straight line from its spawn point on the first frame.
+            StartCoroutine(EnableTrailsNextFrame());
+        }
+        else
+        {
+            foreach (var trail in trails)
+            {
+                trail.Clear();
+                trail.emitting = false;
+            }
+            StartCoroutine(EnableTrailsNextFrame());
         }
     }
 
@@ -130,7 +164,7 @@ public class ShotProjectile : PortalTraveller
         shotData = data;
         hasHit = false;
         hasSplit = false;
-        hasConverged = false; // ADDED
+        hasConverged = false;
 
         if (rb == null)
             rb = GetComponent<Rigidbody>();
@@ -147,6 +181,19 @@ public class ShotProjectile : PortalTraveller
 
         useSpeedTrail = data.speed > speedTrailThreshold;
         trailSegmentStart = spawnPosition;
+        trails = GetComponentsInChildren<TrailRenderer>();
+        // If trails were detached on the last shot, spawn fresh ones from the prefab.
+        if (trails.Length == 0 && data.projectilePrefab != null)
+        {
+            TrailRenderer[] prefabTrails = data.projectilePrefab.GetComponentsInChildren<TrailRenderer>();
+            foreach (TrailRenderer pt in prefabTrails)
+            {
+                GameObject copy = Instantiate(pt.gameObject, transform);
+                copy.transform.localPosition = pt.transform.localPosition;
+                copy.transform.localRotation = pt.transform.localRotation;
+            }
+            trails = GetComponentsInChildren<TrailRenderer>();
+        }
 
         if (useSpeedTrail && trails.Length > 0)
         {
@@ -169,21 +216,18 @@ public class ShotProjectile : PortalTraveller
 
         rb.useGravity = useGravity;
 
-        // ADDED: store exact crosshair hit point so we can steer toward it
         if (Physics.Raycast(cameraPosition, cameraDirection, out RaycastHit camHit,
                             maxRange, data.hitLayers, QueryTriggerInteraction.Ignore))
             crosshairAimPoint = camHit.point;
         else
             crosshairAimPoint = cameraPosition + cameraDirection * maxRange;
 
-        // ADDED: aim initial velocity at the 3m point on the camera ray so the
-        // bullet crosses the crosshair line there; FixedUpdate curves it in smoothly.
         const float convergenceDist = 3f;
         Vector3 convPoint = cameraPosition + cameraDirection * convergenceDist;
         Vector3 toConv = convPoint - transform.position;
         Vector3 initialDir = Vector3.Dot(toConv, cameraDirection) > 0.05f
             ? toConv.normalized
-            : cameraDirection; // barrel already past 3m, fly straight
+            : cameraDirection;
 
         Vector3 velocity = initialDir * data.speed;
         if (useGravity && lobAngle > 0f)
@@ -195,18 +239,26 @@ public class ShotProjectile : PortalTraveller
             StartCoroutine(ClearTrailsNextFrame());
     }
 
-    private IEnumerator ClearTrailsNextFrame()
+    private IEnumerator EnableTrailsNextFrame()
     {
-        foreach (var trail in trails)
-        {
-            trail.emitting = false;
-            trail.Clear();
-        }
         yield return null;
         foreach (var trail in trails)
         {
             trail.Clear();
             trail.emitting = true;
+        }
+    }
+
+    private IEnumerator ClearTrailsNextFrame()
+    {
+        foreach (var trail in trails)
+            trail.emitting = false;
+        yield return null;
+        // Only disable if convergence hasn't already enabled them this frame.
+        if (!hasConverged)
+        {
+            foreach (var trail in trails)
+                trail.emitting = false;
         }
     }
 
@@ -258,9 +310,6 @@ public class ShotProjectile : PortalTraveller
     {
         if (hasHit || shotData == null) return;
 
-        // ADDED: smoothly curve the bullet toward the crosshair aim point.
-        // At 3m (measured along the camera ray) snap the bullet position onto
-        // the ray and lock direction to the aim point — no drift, no overshoot.
         if (!hasConverged)
         {
             const float convergenceDist = 3f;
@@ -271,20 +320,26 @@ public class ShotProjectile : PortalTraveller
                 if (proj >= convergenceDist)
                 {
                     hasConverged = true;
-                    // Place bullet exactly on the camera ray so aim is pixel-perfect.
                     Vector3 onRay = cameraPosition + cameraDirection * proj;
                     rb.position = onRay;
                     transform.position = onRay;
                     Physics.SyncTransforms();
                     rb.linearVelocity = (crosshairAimPoint - onRay).normalized * spd;
+
+                    // Enable trails now that the bullet is on the camera ray.
+                    trailSegmentStart = onRay;
+                    foreach (var trail in trails)
+                    {
+                        trail.Clear();
+                        trail.emitting = true;
+                    }
                 }
                 else
                 {
-                    // Smoothly rotate toward the aim point each physics step.
                     Vector3 toAim = (crosshairAimPoint - rb.position).normalized;
                     Vector3 newDir = Vector3.RotateTowards(
                         rb.linearVelocity.normalized, toAim,
-                        720f * Mathf.Deg2Rad * Time.fixedDeltaTime, 0f);
+                        360f * Mathf.Deg2Rad * Time.fixedDeltaTime, 0f);
                     rb.linearVelocity = newDir * spd;
                 }
             }
@@ -295,8 +350,10 @@ public class ShotProjectile : PortalTraveller
         if (speed < 0.01f) return;
 
         Vector3 dir = vel / speed;
-        // Cast the full frame movement plus a small buffer so we never miss a
-        // surface the Rigidbody has already partially tunnelled into.
+        // Spin the transform around its forward axis — trail emission point orbits
+        // the centre, drawing a helix. Set trailSpinSpeed to 0 to disable.
+        if (hasConverged && trailSpinSpeed != 0f)
+            transform.Rotate(Vector3.forward, trailSpinSpeed * Time.fixedDeltaTime, Space.Self);
         float frameDist = speed * Time.fixedDeltaTime + 0.1f;
         float remainingDist = frameDist;
         Vector3 origin = transform.position;
@@ -307,8 +364,6 @@ public class ShotProjectile : PortalTraveller
 
         while (remainingDist > 0f)
         {
-            // After a bounce, commit the new origin/direction to the Rigidbody so
-            // both raycasts below start from the correct position.
             if (bounced)
             {
                 transform.position = origin;
@@ -320,23 +375,15 @@ public class ShotProjectile : PortalTraveller
                 bounced = false;
             }
 
-            // Cast for walls/damageable targets (original).
             bool hitWall = Physics.Raycast(origin, dir, out RaycastHit wallHit,
                                            remainingDist, shotData.hitLayers);
 
-            // Cast for portal triggers on layer 2 — works at any speed because we
-            // raycast the movement segment explicitly instead of relying on the
-            // physics engine's trigger detection (which tunnels at high speed).
-            // Capped at maxPortalsPerFrame to prevent infinite loops between two
-            // facing portals (A exits toward B which exits toward A, etc).
             RaycastHit portalHit = default;
             bool hitPortal = portalsCrossed < maxPortalsPerFrame &&
                              Physics.Raycast(origin, dir, out portalHit,
                                              remainingDist, PortalLayerMask,
                                              QueryTriggerInteraction.Collide);
 
-            // Validate portal hit: must be linked, traversable, and not a collider
-            // we're starting inside (distance near zero = still inside after teleport).
             Portal portal = null;
             if (hitPortal)
             {
@@ -348,18 +395,12 @@ public class ShotProjectile : PortalTraveller
                 }
             }
 
-            // ── Determine which hit is closer and handle it first ─────────────────
             bool portalIsCloser = hitPortal && (!hitWall || portalHit.distance <= wallHit.distance);
 
             if (portalIsCloser)
             {
-                // ── Portal hit ────────────────────────────────────────────────────
                 SpawnTrailSegment(trailSegmentStart, portalHit.point);
 
-                // Move transform to the actual crossing point before computing
-                // the matrix — identical to how TryPassThrough works at normal speed,
-                // just with the transform snapped to where the ray hit the portal
-                // instead of wherever the Rigidbody overshot to.
                 transform.position = portalHit.point;
                 transform.rotation = Quaternion.LookRotation(dir);
                 rb.position = portalHit.point;
@@ -376,8 +417,6 @@ public class ShotProjectile : PortalTraveller
                 vel = rb.linearVelocity;
                 speed = vel.magnitude;
                 dir = speed > 0.01f ? vel / speed : dir;
-                // Offset past the exit surface so the next raycast starts outside
-                // the destination portal's collider and doesn't immediately re-hit it.
                 origin = transform.position + dir * 0.1f;
                 rb.position = origin;
                 transform.position = origin;
@@ -390,7 +429,6 @@ public class ShotProjectile : PortalTraveller
 
             if (!hitWall) break;
 
-            // ── Wall / obstacle hit ───────────────────────────────────────────────
             IDamageable target = wallHit.collider.GetComponentInParent<IDamageable>();
 
             if (target != null)
@@ -409,10 +447,6 @@ public class ShotProjectile : PortalTraveller
                 return;
             }
 
-            // If the live crosshair is NOT pointing at this wall, pass through it.
-            // Only runs before convergence — once the bullet is on the camera ray
-            // (including after a portal, which sets hasConverged=true) it hits walls normally.
-            // Portals are on PortalLayerMask and are handled above — never affected here.
             if (!hasConverged)
             {
                 Camera liveCam = Camera.main;
@@ -421,13 +455,9 @@ public class ShotProjectile : PortalTraveller
                         liveCam.transform.forward, out RaycastHit crosshairHit,
                         maxRange, shotData.hitLayers, QueryTriggerInteraction.Ignore))
                 {
-                    // Only match the exact same collider AND hit points must be close —
-                    // avoids false positives when all level geometry shares a common root.
                     crosshairOnThisWall = crosshairHit.collider == wallHit.collider
                         && Vector3.Distance(crosshairHit.point, wallHit.point) < 1f;
                 }
-                // If crosshair hits sky or a different object, crosshairOnThisWall stays
-                // false and the bullet passes through.
                 if (!crosshairOnThisWall)
                 {
                     origin = wallHit.point + dir * 0.05f;
@@ -463,7 +493,6 @@ public class ShotProjectile : PortalTraveller
                 continue;
             }
 
-            // No bounces left — final wall hit.
             hasHit = true;
             SpawnTrailSegment(trailSegmentStart, wallHit.point);
             HitInfo finalInfo = new HitInfo(wallHit.point, wallHit.normal, wallHit.collider);
@@ -474,7 +503,6 @@ public class ShotProjectile : PortalTraveller
             return;
         }
 
-        // Flush any pending pass-through move so rb doesn't fight the wall next step.
         if (bounced)
         {
             transform.position = origin;
@@ -526,11 +554,15 @@ public class ShotProjectile : PortalTraveller
         rb.linearVelocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
 
+        // Detach trails BEFORE deactivating — SetActive(false) instantly wipes all
+        // TrailRenderer points, so we orphan them first and let them fade on their own.
         foreach (var trail in trails)
         {
             trail.emitting = false;
-            trail.Clear();
+            trail.transform.SetParent(null, true);
+            Destroy(trail.gameObject, trail.time > 0f ? trail.time : 1f);
         }
+        trails = new TrailRenderer[0];
 
         if (shotData != null && shotData.weaponController != null && prefabSource != null)
             shotData.weaponController.ReturnToPool(gameObject, prefabSource);

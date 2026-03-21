@@ -1,95 +1,52 @@
 using UnityEngine;
 using System.Collections.Generic;
+
 public class RoomActivator : MonoBehaviour
 {
     private List<GameObject> allRooms = new List<GameObject>();
     private Dictionary<GameObject, List<GameObject>> adjacency = new Dictionary<GameObject, List<GameObject>>();
     private GameObject currentRoom;
-    public void Init(List<GameObject> rooms, float snapThreshold, List<KeyValuePair<GameObject, GameObject>> loopPairs = null)
+
+    /// <summary>
+    /// Called once after generation. adjacencyMap is built by RoomGenerator at placement time —
+    /// no distance re-checks, no activate/deactivate side-effects.
+    /// </summary>
+    public void Init(List<GameObject> rooms,
+                     Dictionary<GameObject, List<GameObject>> adjacencyMap)
     {
         allRooms = new List<GameObject>(rooms);
-        adjacency.Clear();
+        adjacency = adjacencyMap;
         currentRoom = null;
+
+        // Make sure every room has at least an empty entry so ActivateAround never throws.
         for (int i = 0; i < allRooms.Count; i++)
-            if (allRooms[i] != null)
+            if (allRooms[i] != null && !adjacency.ContainsKey(allRooms[i]))
                 adjacency[allRooms[i]] = new List<GameObject>();
-        BuildAdjacency(snapThreshold);
-        if (loopPairs != null)
-        {
-            for (int i = 0; i < loopPairs.Count; i++)
-            {
-                GameObject ra = loopPairs[i].Key;
-                GameObject rb = loopPairs[i].Value;
-                if (ra == null || rb == null) continue;
-                if (!adjacency.ContainsKey(ra)) adjacency[ra] = new List<GameObject>();
-                if (!adjacency.ContainsKey(rb)) adjacency[rb] = new List<GameObject>();
-                if (!adjacency[ra].Contains(rb)) adjacency[ra].Add(rb);
-                if (!adjacency[rb].Contains(ra)) adjacency[rb].Add(ra);
-            }
-        }
+
+        // Start with everything off; the first OnPlayerEnteredRoom call will turn the right ones on.
         for (int i = 0; i < allRooms.Count; i++)
             if (allRooms[i] != null)
                 allRooms[i].SetActive(false);
-        if (allRooms.Count > 0 && allRooms[0] != null)
-            ActivateAround(allRooms[0]);
     }
-    private List<Transform> GetConnectionPoints(GameObject room)
-    {
-        List<Transform> pts = new List<Transform>();
-        Transform root = room.transform;
-        for (int i = 0; i < root.childCount; i++)
-        {
-            Transform child = root.GetChild(i);
-            if (child.name == "Entrence" || child.name == "Exit")
-                pts.Add(child);
-        }
-        return pts;
-    }
-    private void BuildAdjacency(float snapThreshold)
-    {
-        List<(GameObject room, Vector3 pos)> allPts = new List<(GameObject, Vector3)>();
-        for (int i = 0; i < allRooms.Count; i++)
-        {
-            if (allRooms[i] == null) continue;
-            bool was = allRooms[i].activeSelf;
-            allRooms[i].SetActive(true);
-            List<Transform> pts = GetConnectionPoints(allRooms[i]);
-            for (int j = 0; j < pts.Count; j++)
-                allPts.Add((allRooms[i], pts[j].position));
-            allRooms[i].SetActive(was);
-        }
-        for (int a = 0; a < allPts.Count; a++)
-        {
-            for (int b = a + 1; b < allPts.Count; b++)
-            {
-                if (allPts[a].room == allPts[b].room) continue;
-                if (Vector3.Distance(allPts[a].pos, allPts[b].pos) > snapThreshold) continue;
-                GameObject ra = allPts[a].room;
-                GameObject rb = allPts[b].room;
-                if (!adjacency.ContainsKey(ra)) adjacency[ra] = new List<GameObject>();
-                if (!adjacency.ContainsKey(rb)) adjacency[rb] = new List<GameObject>();
-                if (!adjacency[ra].Contains(rb)) adjacency[ra].Add(rb);
-                if (!adjacency[rb].Contains(ra)) adjacency[rb].Add(ra);
-            }
-        }
-    }
+
     public void OnPlayerEnteredRoom(GameObject room)
     {
         if (room == null || room == currentRoom) return;
         currentRoom = room;
         ActivateAround(room);
     }
+
     private void ActivateAround(GameObject center)
     {
+        // Only the room the player is in + its direct neighbors stay active.
         HashSet<GameObject> shouldBeActive = new HashSet<GameObject>();
         shouldBeActive.Add(center);
-        if (adjacency.ContainsKey(center))
-        {
-            List<GameObject> neighbors = adjacency[center];
+
+        if (adjacency.TryGetValue(center, out List<GameObject> neighbors))
             for (int i = 0; i < neighbors.Count; i++)
                 if (neighbors[i] != null)
                     shouldBeActive.Add(neighbors[i]);
-        }
+
         for (int i = 0; i < allRooms.Count; i++)
         {
             if (allRooms[i] == null) continue;

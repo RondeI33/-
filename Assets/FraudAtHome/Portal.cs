@@ -70,6 +70,7 @@ public class Portal : MonoBehaviour
     {
         if (!IsLinked) return;
         HandleTravellers();
+
     }
 
     void HandleTravellers()
