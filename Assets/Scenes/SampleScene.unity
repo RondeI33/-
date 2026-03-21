@@ -37763,15 +37763,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::RoomGenerator
   useRandomSeed: 1
   seed: 0
-  minRoomCount: 6
-  maxRoomCount: 7
+  minRoomCount: 12
+  maxRoomCount: 13
   startRoomPrefab: {fileID: 4908608673924988208, guid: 43a016ccf097fbf4d886dca567866c8a, type: 3}
   tutorialRoomPrefab: {fileID: 4908608673924988208, guid: caa9958892a2f0b4db282a621c9d3c9d, type: 3}
   roomPrefabs:
-  - {fileID: 1191055899215776080, guid: 975ba06ef3c6b8f4283410505ff60b1a, type: 3}
-  - {fileID: 3430722119063585212, guid: 27452bfad9c26ff4aadf265f0e0dfc90, type: 3}
+  - {fileID: 4908608673924988208, guid: 2a29370104d4a7344afc832448d11cc0, type: 3}
+  - {fileID: 4908608673924988208, guid: 16a10dc3bc7d78843a491d4d99151217, type: 3}
+  - {fileID: 4908608673924988208, guid: 547d3cc39701dc547b03cb8b78691a43, type: 3}
   treasureRoomPrefabs:
-  - {fileID: 4908608673924988208, guid: 15776bde8fe4f61408a2002f37d2ecb9, type: 3}
+  - {fileID: 4908608673924988208, guid: 2c497aaad7843d549b6456169d3cfa43, type: 3}
   bossRoomPrefab: {fileID: 4908608673924988208, guid: ed85aeb5d386a28409b396b75086288d, type: 3}
   loadingScreen: {fileID: 767272032}
   treasureRoomsOnMainPath: 1

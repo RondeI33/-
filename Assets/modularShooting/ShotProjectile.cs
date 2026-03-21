@@ -34,6 +34,11 @@ public class ShotProjectile : PortalTraveller
     private Vector3 cameraPosition;
     private bool firstBounce;
 
+    // ADDED: where the crosshair is actually pointing (stored at fire time)
+    private Vector3 crosshairAimPoint;
+    // ADDED: true once the bullet has snapped onto the camera ray at 3m
+    private bool hasConverged;
+
     void Awake()
     {
         rb = GetComponent<Rigidbody>();
@@ -71,6 +76,9 @@ public class ShotProjectile : PortalTraveller
         cameraPosition = virtualCamPos;
         spawnPosition = pos;
         trailSegmentStart = pos;
+
+        // ADDED: already flying along the virtual camera ray after a portal
+        hasConverged = true;
 
         Physics.SyncTransforms();
         lastTeleportTime = Time.time;
@@ -122,6 +130,7 @@ public class ShotProjectile : PortalTraveller
         shotData = data;
         hasHit = false;
         hasSplit = false;
+        hasConverged = false; // ADDED
 
         if (rb == null)
             rb = GetComponent<Rigidbody>();
@@ -160,7 +169,23 @@ public class ShotProjectile : PortalTraveller
 
         rb.useGravity = useGravity;
 
-        Vector3 velocity = data.direction.normalized * data.speed;
+        // ADDED: store exact crosshair hit point so we can steer toward it
+        if (Physics.Raycast(cameraPosition, cameraDirection, out RaycastHit camHit,
+                            maxRange, data.hitLayers, QueryTriggerInteraction.Ignore))
+            crosshairAimPoint = camHit.point;
+        else
+            crosshairAimPoint = cameraPosition + cameraDirection * maxRange;
+
+        // ADDED: aim initial velocity at the 3m point on the camera ray so the
+        // bullet crosses the crosshair line there; FixedUpdate curves it in smoothly.
+        const float convergenceDist = 3f;
+        Vector3 convPoint = cameraPosition + cameraDirection * convergenceDist;
+        Vector3 toConv = convPoint - transform.position;
+        Vector3 initialDir = Vector3.Dot(toConv, cameraDirection) > 0.05f
+            ? toConv.normalized
+            : cameraDirection; // barrel already past 3m, fly straight
+
+        Vector3 velocity = initialDir * data.speed;
         if (useGravity && lobAngle > 0f)
             velocity = Quaternion.AngleAxis(-lobAngle, transform.right) * velocity;
 
@@ -232,6 +257,38 @@ public class ShotProjectile : PortalTraveller
     void FixedUpdate()
     {
         if (hasHit || shotData == null) return;
+
+        // ADDED: smoothly curve the bullet toward the crosshair aim point.
+        // At 3m (measured along the camera ray) snap the bullet position onto
+        // the ray and lock direction to the aim point — no drift, no overshoot.
+        if (!hasConverged)
+        {
+            const float convergenceDist = 3f;
+            float proj = Vector3.Dot(rb.position - cameraPosition, cameraDirection);
+            float spd = rb.linearVelocity.magnitude;
+            if (spd > 0.01f)
+            {
+                if (proj >= convergenceDist)
+                {
+                    hasConverged = true;
+                    // Place bullet exactly on the camera ray so aim is pixel-perfect.
+                    Vector3 onRay = cameraPosition + cameraDirection * proj;
+                    rb.position = onRay;
+                    transform.position = onRay;
+                    Physics.SyncTransforms();
+                    rb.linearVelocity = (crosshairAimPoint - onRay).normalized * spd;
+                }
+                else
+                {
+                    // Smoothly rotate toward the aim point each physics step.
+                    Vector3 toAim = (crosshairAimPoint - rb.position).normalized;
+                    Vector3 newDir = Vector3.RotateTowards(
+                        rb.linearVelocity.normalized, toAim,
+                        720f * Mathf.Deg2Rad * Time.fixedDeltaTime, 0f);
+                    rb.linearVelocity = newDir * spd;
+                }
+            }
+        }
 
         Vector3 vel = rb.linearVelocity;
         float speed = vel.magnitude;
@@ -352,6 +409,35 @@ public class ShotProjectile : PortalTraveller
                 return;
             }
 
+            // If the live crosshair is NOT pointing at this wall, pass through it.
+            // Only runs before convergence — once the bullet is on the camera ray
+            // (including after a portal, which sets hasConverged=true) it hits walls normally.
+            // Portals are on PortalLayerMask and are handled above — never affected here.
+            if (!hasConverged)
+            {
+                Camera liveCam = Camera.main;
+                bool crosshairOnThisWall = false;
+                if (liveCam != null && Physics.Raycast(liveCam.transform.position,
+                        liveCam.transform.forward, out RaycastHit crosshairHit,
+                        maxRange, shotData.hitLayers, QueryTriggerInteraction.Ignore))
+                {
+                    // Only match the exact same collider AND hit points must be close —
+                    // avoids false positives when all level geometry shares a common root.
+                    crosshairOnThisWall = crosshairHit.collider == wallHit.collider
+                        && Vector3.Distance(crosshairHit.point, wallHit.point) < 1f;
+                }
+                // If crosshair hits sky or a different object, crosshairOnThisWall stays
+                // false and the bullet passes through.
+                if (!crosshairOnThisWall)
+                {
+                    origin = wallHit.point + dir * 0.05f;
+                    remainingDist -= wallHit.distance + 0.05f;
+                    bounced = true;
+                    if (remainingDist <= 0f) break;
+                    continue;
+                }
+            }
+
             if (bouncesLeft > 0)
             {
                 SpawnTrailSegment(trailSegmentStart, wallHit.point);
@@ -386,6 +472,17 @@ public class ShotProjectile : PortalTraveller
                 callback.Invoke(finalInfo, shotData);
             ReturnToPool();
             return;
+        }
+
+        // Flush any pending pass-through move so rb doesn't fight the wall next step.
+        if (bounced)
+        {
+            transform.position = origin;
+            transform.rotation = Quaternion.LookRotation(dir);
+            rb.position = origin;
+            rb.rotation = transform.rotation;
+            rb.linearVelocity = dir * speed;
+            Physics.SyncTransforms();
         }
 
         if (bouncesLeft != shotData.GetProperty("bouncesLeft", 0))

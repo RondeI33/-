@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.AI;
 using System.Collections;
 
@@ -158,6 +158,10 @@ public class Strzelacz : MonoBehaviour, IEnemy
     private float[] flankAngleBuffer = new float[32];
 
     private float noLosJumpCooldown;
+    private bool isWandering;
+    private float noProgressTimer;
+    private float lastDistToPlayer;
+    private const float NoProgressTimeout = 1.5f;
 
     public void InitAgent()
     {
@@ -255,6 +259,9 @@ public class Strzelacz : MonoBehaviour, IEnemy
     {
         active = true;
         lastStuckCheckPos = transform.position;
+        isWandering = false;
+        noProgressTimer = 0f;
+        lastDistToPlayer = float.MaxValue;
         combatState = CombatState.Approach;
         repositionTimer = Random.Range(minRepositionTime, maxRepositionTime);
         flankCheckTimer = 1f;
@@ -517,7 +524,11 @@ public class Strzelacz : MonoBehaviour, IEnemy
         if (rising) return;
         if (!active || player == null || agent == null) return;
         if (forceApplier != null && forceApplier.IsKnocked) return;
-        if (traversingLink) return;
+        if (traversingLink)
+        {
+            UpdateShootingDuringTraversal();
+            return;
+        }
 
         if (agent.isOnOffMeshLink)
         {
@@ -558,7 +569,26 @@ public class Strzelacz : MonoBehaviour, IEnemy
         if (jumpUpCheckTimer <= 0f)
         {
             jumpUpCheckTimer = jumpUpCheckInterval;
-            TryJumpUp(false);
+            // Only consider jumping when we don't already have clear LOS —
+            // if we can already see the player, walk normally instead of
+            // locking into a jump coroutine unnecessarily.
+            if (!CheckLineOfSight())
+                TryJumpUp(false);
+        }
+    }
+
+    private void UpdateShootingDuringTraversal()
+    {
+        if (player == null || dying) return;
+        float dist = Vector3.Distance(transform.position, player.position);
+        if (dist > attackRange) return;
+        AimHand();
+        bool hasShootLOS = CheckShootLineOfSight();
+        fireTimer -= Time.deltaTime;
+        if (hasShootLOS && fireTimer <= 0f)
+        {
+            Shoot();
+            fireTimer = 1f / fireRate;
         }
     }
 
@@ -569,8 +599,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
         bool hasThickLOS = CheckLineOfSightThick();
 
         Debug.DrawLine(transform.position + Vector3.up * losHeightOffset, player.position + Vector3.up * playerCenterHeight, hasLOS ? Color.green : Color.red);
-        if (losCheckPoint != null)
-            Debug.DrawLine(losCheckPoint.position, player.position + Vector3.up * playerCenterHeight, hasShootLOS ? Color.blue : Color.yellow);
 
         AimHand();
         repositionTimer -= Time.deltaTime;
@@ -595,7 +623,7 @@ public class Strzelacz : MonoBehaviour, IEnemy
             fireTimer = 1f / fireRate;
         }
 
-        if (dist <= attackRange * 1.5f && !hasThickLOS && noLosJumpCooldown <= 0f)
+        if (dist <= attackRange * 1.5f && !hasLOS && !hasThickLOS && noLosJumpCooldown <= 0f)
         {
             if (TryJumpUp(true))
                 return;
@@ -627,6 +655,65 @@ public class Strzelacz : MonoBehaviour, IEnemy
             return;
         }
 
+        agent.speed = agentSpeed;
+        agent.stoppingDistance = minPlayerDistance;
+
+        if (!hasLOS)
+        {
+            if (!agent.isOnNavMesh)
+            {
+                agent.enabled = true;
+                NavMeshHit recoveryHit;
+                if (NavMesh.SamplePosition(transform.position, out recoveryHit, 3f, NavMesh.AllAreas))
+                    agent.Warp(recoveryHit.position);
+            }
+
+            // While wandering: don't overwrite the wander destination.
+            if (isWandering)
+            {
+                if (!agent.pathPending && agent.remainingDistance < 1f)
+                {
+                    isWandering = false;
+                    noProgressTimer = 0f;
+                    lastDistToPlayer = float.MaxValue;
+                }
+                else
+                {
+                    FaceMovement();
+                    return;
+                }
+            }
+
+            agent.stoppingDistance = minPlayerDistance;
+            if (agent.isOnNavMesh) agent.SetDestination(player.position);
+
+            float currentDist = Vector3.Distance(transform.position, player.position);
+            if (currentDist < lastDistToPlayer - 0.2f)
+            {
+                lastDistToPlayer = currentDist;
+                noProgressTimer = 0f;
+            }
+            else
+            {
+                noProgressTimer += Time.deltaTime;
+            }
+
+            // 3 seconds with no progress — try jump, then wander somewhere new.
+            if (noProgressTimer >= 3f)
+            {
+                noProgressTimer = 0f;
+                lastDistToPlayer = float.MaxValue;
+                if (!TryJumpUp(false))
+                {
+                    isWandering = true;
+                    WanderToRandomSpot();
+                }
+            }
+
+            FaceMovement();
+            return;
+        }
+
         approachSideTimer -= Time.deltaTime;
         if (approachSideTimer <= 0f)
         {
@@ -648,7 +735,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
         else
             agent.SetDestination(player.position);
 
-        agent.speed = agentSpeed;
         FaceMovement();
     }
 
@@ -658,6 +744,18 @@ public class Strzelacz : MonoBehaviour, IEnemy
         {
             combatState = CombatState.Approach;
             agent.speed = agentSpeed;
+            // Clear the stale strafe destination immediately so the agent
+            // starts routing toward the player rather than finishing the
+            // old strafe movement first.
+            if (!agent.isOnNavMesh)
+            {
+                agent.enabled = true;
+                NavMeshHit recoveryHit;
+                if (NavMesh.SamplePosition(transform.position, out recoveryHit, 3f, NavMesh.AllAreas))
+                    agent.Warp(recoveryHit.position);
+            }
+            if (agent.isOnNavMesh)
+                agent.SetDestination(player.position);
             return;
         }
 
@@ -719,6 +817,10 @@ public class Strzelacz : MonoBehaviour, IEnemy
 
     private void EnterStrafeAttack()
     {
+        isWandering = false;
+        noProgressTimer = 0f;
+        lastDistToPlayer = float.MaxValue;
+        agent.stoppingDistance = agentStoppingDistance;
         combatState = CombatState.StrafeAttack;
         agent.speed = agentSpeed * strafeSpeedMultiplier;
         strafeDir = Random.value > 0.5f ? 1 : -1;
@@ -728,6 +830,7 @@ public class Strzelacz : MonoBehaviour, IEnemy
 
     private void EnterReposition()
     {
+        agent.stoppingDistance = agentStoppingDistance;
         combatState = CombatState.Reposition;
         sprintReposition = Random.value < sprintChance;
         agent.speed = sprintReposition ? agentSpeed * repositionSprintMultiplier : agentSpeed;
@@ -867,20 +970,9 @@ public class Strzelacz : MonoBehaviour, IEnemy
 
     private bool IsLandingUseful(Vector3 landingPos)
     {
-        NavMeshHit navHit;
-        if (NavMesh.SamplePosition(landingPos, out navHit, 1.5f, NavMesh.AllAreas))
-        {
-            NavMeshPath testPath = new NavMeshPath();
-            NavMesh.CalculatePath(navHit.position, player.position, NavMesh.AllAreas, testPath);
-            if (testPath.status == NavMeshPathStatus.PathComplete)
-                return true;
-        }
-
-        Vector3 dropTarget;
-        if (TryFindDropToward(landingPos, out dropTarget))
-            return true;
-
-        return false;
+        // If a ledge exists and we have no LOS, just jump to it.
+        // Any jump is better than standing still — chained jumps handle the rest.
+        return true;
     }
 
     private bool IsAlreadyAtLanding(Vector3 landingPos)
@@ -908,13 +1000,14 @@ public class Strzelacz : MonoBehaviour, IEnemy
         if (!TryFindLedge(out landingPos)) return false;
         if (!IsLandingClear(landingPos)) return false;
         if (!IsLandingUseful(landingPos)) return false;
+        if (Vector3.Distance(landingPos, player.position) < minPlayerDistance) return false;
 
         if (forceJump)
         {
-            float currentDist = Vector3.Distance(transform.position, player.position);
-            float landingDist = Vector3.Distance(landingPos, player.position);
-            if (landingDist >= currentDist) return false;
-
+            // Don't reject based on 3D distance — the ledge top is always further
+            // from the player than the wall base when jumping up to reach them.
+            // We already confirmed no LOS and no thick LOS before calling this,
+            // so jumping is always the right move.
             stuckTimer = 0f;
             StartCoroutine(JumpUp(landingPos, 0));
             return true;
@@ -923,28 +1016,10 @@ public class Strzelacz : MonoBehaviour, IEnemy
         agent.CalculatePath(player.position, pathCache);
         bool pathIncomplete = pathCache.status != NavMeshPathStatus.PathComplete;
 
-        if (pathIncomplete)
-        {
-            stuckTimer = 0f;
-            StartCoroutine(JumpUp(landingPos, 0));
-            return true;
-        }
-
-        float walkLength = 0f;
-        Vector3[] corners = pathCache.corners;
-        for (int i = 1; i < corners.Length; i++)
-            walkLength += Vector3.Distance(corners[i - 1], corners[i]);
-
-        NavMeshPath jumpPath = new NavMeshPath();
-        float jumpLength = Vector3.Distance(transform.position, landingPos);
-        if (NavMesh.CalculatePath(landingPos, player.position, NavMesh.AllAreas, jumpPath))
-        {
-            Vector3[] jCorners = jumpPath.corners;
-            for (int i = 1; i < jCorners.Length; i++)
-                jumpLength += Vector3.Distance(jCorners[i - 1], jCorners[i]);
-        }
-
-        if (jumpLength < walkLength)
+        // If path is incomplete OR we have no LOS (enemy clipping wall, player
+        // on upper level), always jump — don't compare lengths because the
+        // ground path length is meaningless when it can't actually reach the player.
+        if (pathIncomplete || !CheckLineOfSight())
         {
             stuckTimer = 0f;
             StartCoroutine(JumpUp(landingPos, 0));
@@ -971,31 +1046,135 @@ public class Strzelacz : MonoBehaviour, IEnemy
         return false;
     }
 
+    private void WanderToRandomSpot()
+    {
+        noProgressTimer = 0f;
+        lastDistToPlayer = float.MaxValue;
+        for (int attempt = 0; attempt < 20; attempt++)
+        {
+            Vector3 randomDir = Random.insideUnitSphere;
+            randomDir.y = 0f;
+            Vector3 randomTarget = transform.position + randomDir.normalized * Random.Range(4f, 12f);
+            NavMeshHit wanderHit;
+            if (NavMesh.SamplePosition(randomTarget, out wanderHit, 5f, NavMesh.AllAreas))
+            {
+                NavMeshPath wanderPath = new NavMeshPath();
+                NavMesh.CalculatePath(transform.position, wanderHit.position, NavMesh.AllAreas, wanderPath);
+                if (wanderPath.status == NavMeshPathStatus.PathComplete)
+                {
+                    agent.stoppingDistance = agentStoppingDistance;
+                    if (agent.isOnNavMesh) agent.SetDestination(wanderHit.position);
+                    return;
+                }
+            }
+        }
+        // No valid spot found — clear flag so we don't stall forever.
+        isWandering = false;
+    }
+
+    private bool TryFindWalkableJumpBase(out Vector3 basePos)
+    {
+        // Scan in 16 directions around the enemy looking for any ledge within
+        // jumpUpMaxHeight. For each found ledge, check if its base is reachable
+        // by walking (complete NavMesh path). Return the closest reachable one.
+        basePos = Vector3.zero;
+        float bestDist = float.MaxValue;
+        bool found = false;
+
+        for (int i = 0; i < 16; i++)
+        {
+            float angle = i * (360f / 16f) * Mathf.Deg2Rad;
+            Vector3 dir = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
+
+            // Pull back so the ray starts behind the enemy, avoiding inside-wall starts.
+            Vector3 rayOrigin = transform.position + Vector3.up * 0.5f - dir * agentRadius * 1.5f;
+
+            RaycastHit hit;
+            if (!Physics.Raycast(rayOrigin, dir, out hit,
+                agentRadius * 1.5f + jumpUpMaxHeight * 2f, obstacleLayer)) continue;
+
+            float wallAngle = Vector3.Angle(hit.normal, Vector3.up);
+            if (wallAngle < 50f) continue;
+
+            Vector3 wallPoint = hit.point;
+
+            // Scan down from above to find the ledge top.
+            Vector3 topScan = wallPoint + Vector3.up * (jumpUpMaxHeight + 1f);
+            RaycastHit topHit;
+            if (!Physics.Raycast(topScan, Vector3.down, out topHit,
+                jumpUpMaxHeight + 2f, obstacleLayer)) continue;
+
+            float h = topHit.point.y - transform.position.y;
+            if (h <= 0.3f || h > jumpUpMaxHeight) continue;
+
+            // The jump base is the NavMesh point at the wall's base.
+            Vector3 baseCandidate = wallPoint - dir * agentRadius * 2f;
+            baseCandidate.y = transform.position.y;
+
+            NavMeshHit navHit;
+            if (!NavMesh.SamplePosition(baseCandidate, out navHit, 3f, NavMesh.AllAreas)) continue;
+
+            // Must be walkable from current position.
+            NavMeshPath path = new NavMeshPath();
+            NavMesh.CalculatePath(transform.position, navHit.position, NavMesh.AllAreas, path);
+            if (path.status != NavMeshPathStatus.PathComplete) continue;
+
+            float d = Vector3.Distance(transform.position, navHit.position);
+            if (d < bestDist)
+            {
+                bestDist = d;
+                basePos = navHit.position;
+                found = true;
+            }
+        }
+
+        return found;
+    }
+
     private bool TryFindLedge(out Vector3 landingPos)
     {
         landingPos = Vector3.zero;
-        RaycastHit rayHit;
         float enemyY = transform.position.y;
+        float pullBack = agentRadius * 1.5f;
 
+        // Scan 16 directions so we find ledges that are not directly toward
+        // the player — nearby ledges to the side are missed by a single ray.
+        // Sort directions so toward-player is tried first.
         Vector3 toPlayer = player.position - transform.position;
         toPlayer.y = 0f;
-        Vector3 dirToPlayer = toPlayer.sqrMagnitude > 0.001f ? toPlayer.normalized : transform.forward;
+        float baseAngle = toPlayer.sqrMagnitude > 0.001f
+            ? Mathf.Atan2(toPlayer.z, toPlayer.x)
+            : 0f;
 
-        if (Physics.Raycast(transform.position + Vector3.up * 0.5f, dirToPlayer, out rayHit, jumpUpMaxHeight * 2f, obstacleLayer))
+        int numDirs = 16;
+        for (int i = 0; i < numDirs; i++)
         {
+            // Interleave: 0, 1, -1, 2, -2 ... so toward-player is first
+            int idx = (i % 2 == 0) ? i / 2 : -(i / 2 + 1);
+            float angle = baseAngle + idx * (Mathf.PI * 2f / numDirs);
+            Vector3 dir = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
+
+            Vector3 origin = transform.position + Vector3.up * 0.5f - dir * pullBack;
+            RaycastHit rayHit;
+
+            if (!Physics.Raycast(origin, dir, out rayHit, jumpUpMaxHeight * 2f + pullBack, obstacleLayer))
+                continue;
+
             float wallAngle = Vector3.Angle(rayHit.normal, Vector3.up);
-            if (wallAngle < 50f) return false;
+            if (wallAngle < 50f) continue;
 
             Vector3 wallPoint = rayHit.point;
-            float wallDist = rayHit.distance;
+            float wallDist = Vector3.Distance(
+                new Vector3(transform.position.x, wallPoint.y, transform.position.z),
+                wallPoint);
+            if (wallDist > agentRadius * 6f) continue;
 
-            if (wallDist > agentRadius * 5f) return false;
-
+            // Scan down from above the wall to find the ledge top.
             Vector3 topScan = wallPoint + Vector3.up * (jumpUpMaxHeight + 1f);
             if (Physics.Raycast(topScan, Vector3.down, out rayHit, jumpUpMaxHeight + 2f, obstacleLayer))
             {
                 float h = rayHit.point.y - enemyY;
-                if (h > 0.5f && h <= jumpUpMaxHeight)
+                if (h > 0.3f && h <= jumpUpMaxHeight)
                 {
                     Vector3 candidate = rayHit.point + Vector3.up * 0.05f;
                     if (!IsAlreadyAtLanding(candidate))
@@ -1006,15 +1185,16 @@ public class Strzelacz : MonoBehaviour, IEnemy
                 }
             }
 
-            for (float y = 1f; y <= jumpUpMaxHeight; y += 0.5f)
+            // Probe up the wall face to find an open ledge.
+            for (float y = 0.5f; y <= jumpUpMaxHeight; y += 0.5f)
             {
-                Vector3 probe = wallPoint + Vector3.up * y + dirToPlayer * 0.5f;
-                if (!Physics.Raycast(probe, dirToPlayer, 1f, obstacleLayer))
+                Vector3 probe = wallPoint + Vector3.up * y + dir * 0.5f;
+                if (!Physics.Raycast(probe, dir, 1f, obstacleLayer))
                 {
                     if (Physics.Raycast(probe + Vector3.up * 0.5f, Vector3.down, out rayHit, 1.5f, obstacleLayer))
                     {
                         float h = rayHit.point.y - enemyY;
-                        if (h > 0.5f && h <= jumpUpMaxHeight)
+                        if (h > 0.3f && h <= jumpUpMaxHeight)
                         {
                             Vector3 candidate = rayHit.point + Vector3.up * 0.05f;
                             if (!IsAlreadyAtLanding(candidate))
@@ -1023,24 +1203,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
                                 return true;
                             }
                         }
-                    }
-                }
-            }
-        }
-
-        if (Physics.Raycast(transform.position + Vector3.up * 0.5f, Vector3.up, out rayHit, jumpUpMaxHeight, obstacleLayer))
-        {
-            Vector3 surfacePoint = rayHit.point + Vector3.up * 0.2f;
-            if (Physics.Raycast(surfacePoint + Vector3.up * 0.5f, Vector3.down, out rayHit, 1f, obstacleLayer))
-            {
-                float h = rayHit.point.y - enemyY;
-                if (h > 0.5f && h <= jumpUpMaxHeight)
-                {
-                    Vector3 candidate = rayHit.point + Vector3.up * 0.05f;
-                    if (!IsAlreadyAtLanding(candidate))
-                    {
-                        landingPos = candidate;
-                        return true;
                     }
                 }
             }
@@ -1122,12 +1284,23 @@ public class Strzelacz : MonoBehaviour, IEnemy
 
         Vector3 jumpDir = landingPos - startPos;
         jumpDir.y = 0f;
-        Quaternion targetRot = jumpDir.sqrMagnitude > 0.001f ? Quaternion.LookRotation(jumpDir) : transform.rotation;
+        // Rotation we begin the jump facing (toward the ledge).
+        Quaternion jumpFaceRot = jumpDir.sqrMagnitude > 0.001f ? Quaternion.LookRotation(jumpDir) : transform.rotation;
 
         while (elapsed < jumpUpDuration)
         {
             float t = elapsed / jumpUpDuration;
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * 10f);
+
+            // Smoothly blend body rotation: face jump direction at takeoff,
+            // transition toward the player as we crest the arc so the enemy
+            // is already looking at them on landing — no snap.
+            Vector3 toPlayer = player.position - transform.position;
+            toPlayer.y = 0f;
+            Quaternion playerFaceRot = toPlayer.sqrMagnitude > 0.001f
+                ? Quaternion.LookRotation(toPlayer)
+                : jumpFaceRot;
+            Quaternion desiredRot = Quaternion.Slerp(jumpFaceRot, playerFaceRot, t);
+            transform.rotation = Quaternion.Slerp(transform.rotation, desiredRot, Time.deltaTime * 6f);
 
             float x = Mathf.Lerp(startPos.x, landingPos.x, t);
             float z = Mathf.Lerp(startPos.z, landingPos.z, t);
@@ -1145,14 +1318,20 @@ public class Strzelacz : MonoBehaviour, IEnemy
         {
             NavMeshHit navCheck;
             bool onNavMesh = NavMesh.SamplePosition(landingPos, out navCheck, 0.5f, NavMesh.AllAreas);
+            float currentDistToPlayer = Vector3.Distance(landingPos, player.position);
 
             if (!onNavMesh)
             {
                 Vector3 dropTarget;
                 if (TryFindDropToward(landingPos, out dropTarget))
                 {
-                    yield return StartCoroutine(JumpUp(dropTarget, chainDepth + 1));
-                    yield break;
+                    float nextDistToPlayer = Vector3.Distance(dropTarget, player.position);
+                    if (nextDistToPlayer < currentDistToPlayer - 1f &&
+                        nextDistToPlayer >= minPlayerDistance)
+                    {
+                        yield return StartCoroutine(JumpUp(dropTarget, chainDepth + 1));
+                        yield break;
+                    }
                 }
             }
             else
@@ -1164,8 +1343,13 @@ public class Strzelacz : MonoBehaviour, IEnemy
                     Vector3 nextTarget;
                     if (TryFindDropToward(landingPos, out nextTarget))
                     {
-                        yield return StartCoroutine(JumpUp(nextTarget, chainDepth + 1));
-                        yield break;
+                        float nextDistToPlayer = Vector3.Distance(nextTarget, player.position);
+                        if (nextDistToPlayer < currentDistToPlayer - 1f &&
+                            nextDistToPlayer >= minPlayerDistance)
+                        {
+                            yield return StartCoroutine(JumpUp(nextTarget, chainDepth + 1));
+                            yield break;
+                        }
                     }
                 }
             }
@@ -1194,13 +1378,20 @@ public class Strzelacz : MonoBehaviour, IEnemy
 
         Vector3 linkDir = endPos - startPos;
         linkDir.y = 0f;
-        Quaternion targetRot = linkDir.sqrMagnitude > 0.001f ? Quaternion.LookRotation(linkDir) : transform.rotation;
+        Quaternion linkFaceRot = linkDir.sqrMagnitude > 0.001f ? Quaternion.LookRotation(linkDir) : transform.rotation;
 
         while (elapsed < duration)
         {
             float t = elapsed / duration;
 
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * 10f);
+            // Blend from link-travel direction toward player-facing across the traversal.
+            Vector3 toPlayerLink = player.position - transform.position;
+            toPlayerLink.y = 0f;
+            Quaternion playerFaceLink = toPlayerLink.sqrMagnitude > 0.001f
+                ? Quaternion.LookRotation(toPlayerLink)
+                : linkFaceRot;
+            Quaternion desiredLink = Quaternion.Slerp(linkFaceRot, playerFaceLink, t);
+            transform.rotation = Quaternion.Slerp(transform.rotation, desiredLink, Time.deltaTime * 6f);
 
             if (isDrop)
             {
@@ -1224,7 +1415,23 @@ public class Strzelacz : MonoBehaviour, IEnemy
         }
 
         transform.position = endPos;
-        agent.CompleteOffMeshLink();
+
+        // Guard: CompleteOffMeshLink requires an active agent on the NavMesh.
+        // If the animation landed us slightly off-mesh, warp back first.
+        if (agent.enabled && agent.isOnNavMesh)
+        {
+            agent.CompleteOffMeshLink();
+        }
+        else
+        {
+            agent.enabled = true;
+            NavMeshHit warpHit;
+            if (NavMesh.SamplePosition(transform.position, out warpHit, 3f, NavMesh.AllAreas))
+                agent.Warp(warpHit.position);
+            else
+                agent.Warp(transform.position);
+        }
+
         traversingLink = false;
         jumpUpCheckTimer = 0f;
     }
@@ -1253,8 +1460,16 @@ public class Strzelacz : MonoBehaviour, IEnemy
         Vector3 origin = transform.position + Vector3.up * losHeightOffset;
         Vector3 target = player.position + Vector3.up * playerCenterHeight;
         Vector3 dir = target - origin;
+        float dist = dir.magnitude;
+        if (dist < 0.01f) return true;
 
-        return !Physics.Raycast(origin, dir.normalized, dir.magnitude, obstacleLayer);
+        // Cast forward (enemy→player) AND backward (player→enemy).
+        // When the enemy is pressed below a ledge, the forward origin ends up
+        // above the ledge top and the ray never hits it — but the reverse cast
+        // from the player side does. Both must be clear for true LOS.
+        if (Physics.Raycast(origin, dir.normalized, dist, obstacleLayer)) return false;
+        if (Physics.Raycast(target, -dir.normalized, dist, obstacleLayer)) return false;
+        return true;
     }
 
     private bool CheckLineOfSightThick()
@@ -1266,16 +1481,29 @@ public class Strzelacz : MonoBehaviour, IEnemy
         if (dist < 0.01f) return true;
 
         RaycastHit hit;
-        return !Physics.SphereCast(origin, agentRadius * 0.5f, dir.normalized, out hit, dist, obstacleLayer);
+        if (Physics.SphereCast(origin, agentRadius * 0.5f, dir.normalized, out hit, dist, obstacleLayer)) return false;
+        if (Physics.SphereCast(target, agentRadius * 0.5f, -dir.normalized, out hit, dist, obstacleLayer)) return false;
+        return true;
     }
 
     private bool CheckShootLineOfSight()
     {
         if (losCheckPoint == null) return CheckLineOfSight();
+
+        // Verify the shoot point itself hasn't clipped through a wall.
+        // Cast from the enemy body toward the losCheckPoint — if that path is
+        // blocked, the gun is inside geometry and any LOS from it is invalid.
+        Vector3 bodyOrigin = transform.position + Vector3.up * losHeightOffset;
+        Vector3 toCheckPoint = losCheckPoint.position - bodyOrigin;
+        if (toCheckPoint.sqrMagnitude > 0.001f &&
+            Physics.Raycast(bodyOrigin, toCheckPoint.normalized, toCheckPoint.magnitude, obstacleLayer))
+        {
+            return false;
+        }
+
         Vector3 origin = losCheckPoint.position;
         Vector3 target = player.position + Vector3.up * playerCenterHeight;
         Vector3 dir = target - origin;
-
         return !Physics.Raycast(origin, dir.normalized, dir.magnitude, obstacleLayer);
     }
 
