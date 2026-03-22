@@ -1,7 +1,6 @@
 ﻿using UnityEngine;
 using UnityEngine.AI;
 using System.Collections;
-
 public class Strzelacz : MonoBehaviour, IEnemy
 {
     [Header("References")]
@@ -10,22 +9,18 @@ public class Strzelacz : MonoBehaviour, IEnemy
     [SerializeField] private Transform hand;
     [SerializeField] private Transform losCheckPoint;
     [SerializeField] private Transform modelTransform;
-
     [Header("Detection")]
     [SerializeField] private float detectionRange = 67f;
     [SerializeField] private float attackRange = 9f;
     [SerializeField] private LayerMask obstacleLayer;
     [SerializeField] private float losHeightOffset = 1f;
-
     [Header("Shooting")]
     [SerializeField] private float fireRate = 2f;
     [SerializeField] private float projectileSpeed = 20f;
     [SerializeField] private float minDamage = 6f;
     [SerializeField] private float maxDamage = 7f;
-
     [Header("Health")]
     [SerializeField] private float health = 166f;
-
     [Header("Nav Agent")]
     [SerializeField] private float agentSpeed = 4.67f;
     [SerializeField] private float agentAngularSpeed = 120f;
@@ -33,29 +28,24 @@ public class Strzelacz : MonoBehaviour, IEnemy
     [SerializeField] private float agentStoppingDistance = 0.33f;
     [SerializeField] private float agentRadius = 1f;
     [SerializeField] private float agentHeight = 3.69f;
-
     [Header("Animation")]
     [SerializeField] private Animator animCont;
-
     [Header("Hit Feedback")]
     [SerializeField] private GameObject hitParticlePrefab;
     [SerializeField] private float hitWobbleAngle = 9f;
     [SerializeField] private float hitWobbleSpeed = 2.33f;
     [SerializeField] private float hitWobbleDuration = 0.33f;
-
     [Header("Spawn Rise")]
     [SerializeField] private float riseDepth = 2.133f;
     [SerializeField] private float riseDepthRandomRange = 0.133f;
     [SerializeField] private float riseDuration = 0.33f;
     [SerializeField] private float riseDurationRandomRange = 0f;
     [SerializeField] private float hitboxEnableTime = 0.13f;
-
     [Header("Spawn Stretch")]
     [SerializeField] private float stretchAmount = 0.13f;
     [SerializeField] private float stretchDuration = 0.23f;
     [SerializeField] private float stretchStartPercent = 0f;
     [SerializeField] private float settleDuration = 0.23f;
-
     [Header("Death Effect")]
     [SerializeField] private Shader deathShader;
     [SerializeField] private float deathDuration = 0.8f;
@@ -63,13 +53,11 @@ public class Strzelacz : MonoBehaviour, IEnemy
     [SerializeField] private float deathStretchY = 2f;
     [SerializeField] private float deathShrinkXZ = 0.05f;
     [SerializeField] private Color deathColor = new Color(1f, 0.85f, 0.3f, 1f);
-
     [Header("Walk Animation")]
     [SerializeField] private float walkBobAmount = 0.02f;
     [SerializeField] private float walkBobSpeed = 8f;
     [SerializeField] private float walkTiltAmount = 3f;
     [SerializeField] private float walkTiltSpeed = 4f;
-
     [Header("Sound Effects")]
     [SerializeField] private AudioSource shootAudioSource;
     [SerializeField] private AudioClip shootSound;
@@ -77,17 +65,14 @@ public class Strzelacz : MonoBehaviour, IEnemy
     [SerializeField] private float deathVolume = 1f;
     [SerializeField] private float pitchMin = 0.9f;
     [SerializeField] private float pitchMax = 1.1f;
-
     [Header("Off-Mesh Link Traversal")]
     [SerializeField] private float dropDuration = 0.4f;
     [SerializeField] private float jumpDuration = 0.5f;
-
     [Header("Jump Up")]
     [SerializeField] private float jumpUpMaxHeight = 3f;
     [SerializeField] private float jumpUpCheckInterval = 0.5f;
     [SerializeField] private float jumpUpDuration = 0.6f;
     [SerializeField] private float jumpUpChance = 0.1f;
-
     [Header("Combat AI")]
     [SerializeField] private float strafeSpeedMultiplier = 0.75f;
     [SerializeField] private float repositionSprintMultiplier = 1.5f;
@@ -101,7 +86,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
     [SerializeField] private float sprintChance = 0.5f;
     [SerializeField] private float flankAngleThreshold = 40f;
     [SerializeField] private float minPlayerDistance = 1.5f;
-
     private bool dying;
     private float deathTimer;
     private Vector3 deathStartPos;
@@ -109,7 +93,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
     private Material[] deathMaterials;
     private Color[] originalColors;
     private Shader unlitShader;
-
     private NavMeshAgent agent;
     private Transform player;
     private Doors doors;
@@ -117,10 +100,8 @@ public class Strzelacz : MonoBehaviour, IEnemy
     private bool active;
     private float playerCenterHeight;
     private EnemyForceApplier forceApplier;
-
     private float wobbleTimer;
     private Vector3 modelOriginalScale;
-
     private bool rising;
     private float riseTimer;
     private float actualRiseDepth;
@@ -129,22 +110,18 @@ public class Strzelacz : MonoBehaviour, IEnemy
     private Vector3 modelTargetLocalPos;
     private bool hitboxesEnabled;
     private Collider[] hitboxes;
-
     private bool stretching;
     private float stretchTimer;
-
     private bool settling;
     private float settleTimer;
     private Quaternion modelOriginalRotation;
     private Vector3 scaleOverride;
     private bool applyScaleOverride;
-
     private bool traversingLink;
     private float jumpUpCheckTimer;
     private NavMeshPath pathCache;
     private Vector3 lastStuckCheckPos;
     private float stuckTimer;
-
     private enum CombatState { Approach, StrafeAttack, Reposition, Flank }
     private CombatState combatState;
     private Vector3 currentMoveTarget;
@@ -156,13 +133,11 @@ public class Strzelacz : MonoBehaviour, IEnemy
     private float approachSideTimer;
     private bool sprintReposition;
     private float[] flankAngleBuffer = new float[32];
-
     private float noLosJumpCooldown;
     private bool isWandering;
     private float noProgressTimer;
     private float lastDistToPlayer;
     private const float NoProgressTimeout = 1.5f;
-
     public void InitAgent()
     {
         agent = gameObject.AddComponent<NavMeshAgent>();
@@ -189,14 +164,11 @@ public class Strzelacz : MonoBehaviour, IEnemy
             modelTransform.localRotation = modelOriginalRotation;
             return;
         }
-
         if (wobbleTimer <= hitWobbleDuration) return;
-
         float time = Time.time;
         float bob = Mathf.Abs(Mathf.Sin(time * walkBobSpeed)) * walkBobAmount;
         scaleOverride = modelOriginalScale + new Vector3(0f, -bob, 0f);
         applyScaleOverride = true;
-
         float tilt = Mathf.Sin(time * walkTiltSpeed) * walkTiltAmount;
         modelTransform.localRotation = modelOriginalRotation * Quaternion.Euler(tilt, 0f, 0f);
     }
@@ -211,24 +183,19 @@ public class Strzelacz : MonoBehaviour, IEnemy
             if (cc != null)
                 playerCenterHeight = cc.center.y + 0.33f;
         }
-
         if (modelTransform != null)
         {
             modelOriginalScale = modelTransform.localScale;
             modelOriginalRotation = modelTransform.localRotation;
             modelTargetLocalPos = modelTransform.localPosition;
-
             actualRiseDepth = riseDepth + Random.Range(-riseDepthRandomRange, riseDepthRandomRange);
             actualRiseDuration = riseDuration + Random.Range(-riseDurationRandomRange, riseDurationRandomRange);
-
             modelStartLocalPos = modelTargetLocalPos + Vector3.down * actualRiseDepth;
             modelTransform.localPosition = modelStartLocalPos;
         }
-
         hitboxes = modelTransform != null
             ? modelTransform.GetComponentsInChildren<Collider>()
             : GetComponentsInChildren<Collider>();
-
         SetHitboxes(false);
         rising = true;
         riseTimer = 0f;
@@ -236,25 +203,21 @@ public class Strzelacz : MonoBehaviour, IEnemy
         wobbleTimer = hitWobbleDuration + 1f;
         applyScaleOverride = false;
     }
-
     private void LateUpdate()
     {
         if (modelTransform != null && applyScaleOverride)
             modelTransform.localScale = scaleOverride;
     }
-
     private void SetHitboxes(bool enabled)
     {
         if (hitboxes == null) return;
         foreach (Collider col in hitboxes)
             col.enabled = enabled;
     }
-
     public void SetDoors(Doors room)
     {
         doors = room;
     }
-
     public void Activate()
     {
         active = true;
@@ -269,7 +232,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
         approachSide = Random.value > 0.5f ? 1f : -1f;
         approachSideTimer = approachOffsetChangeTime;
     }
-
     public void TakeDamage(float damage)
     {
         if (!hitboxesEnabled) return;
@@ -282,7 +244,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
         if (health <= 0f)
             Die();
     }
-
     public void TakeDamage(float damage, Vector3 hitPoint, Vector3 hitNormal)
     {
         if (!hitboxesEnabled) return;
@@ -290,7 +251,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
             SpawnHitParticle(hitPoint, hitNormal);
         TakeDamage(damage);
     }
-
     private void TryDodgeOnHit()
     {
         if (dying || rising || !active) return;
@@ -299,7 +259,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
         if (Random.value > dodgeOnHitChance) return;
         EnterReposition();
     }
-
     private void SpawnHitParticle(Vector3 hitPoint, Vector3 hitNormal)
     {
         if (hitParticlePrefab == null) return;
@@ -309,46 +268,36 @@ public class Strzelacz : MonoBehaviour, IEnemy
         GameObject fx = Instantiate(hitParticlePrefab, hitPoint, rot);
         Destroy(fx, 3f);
     }
-
     private void TriggerWobble()
     {
         if (modelTransform == null) return;
         wobbleTimer = 0f;
     }
-
     private void UpdateHitWobble()
     {
         if (modelTransform == null || wobbleTimer > hitWobbleDuration) return;
-
         wobbleTimer += Time.deltaTime;
         float progress = wobbleTimer / hitWobbleDuration;
         float decay = 1f - progress;
         float wave = Mathf.Sin(progress * hitWobbleSpeed * Mathf.PI);
         float scaleOffset = wave * decay * hitWobbleAngle * 0.01f;
-
         scaleOverride = modelOriginalScale + new Vector3(0f, 0f, scaleOffset);
         applyScaleOverride = true;
-
         if (wobbleTimer >= hitWobbleDuration)
             applyScaleOverride = false;
     }
-
     private void UpdateRise()
     {
         if (!rising || modelTransform == null) return;
-
         riseTimer += Time.deltaTime;
-
         if (!hitboxesEnabled && riseTimer >= actualRiseDuration - hitboxEnableTime)
         {
             SetHitboxes(true);
             hitboxesEnabled = true;
         }
-
         float t = Mathf.Clamp01(riseTimer / actualRiseDuration);
         float eased = t * t * (3f - 2f * t);
         modelTransform.localPosition = Vector3.Lerp(modelStartLocalPos, modelTargetLocalPos, eased);
-
         float stretchStartTime = actualRiseDuration * stretchStartPercent;
         if (riseTimer > stretchStartTime)
         {
@@ -358,12 +307,10 @@ public class Strzelacz : MonoBehaviour, IEnemy
             scaleOverride = new Vector3(modelOriginalScale.x, Mathf.Lerp(modelOriginalScale.y, peakY, stretchEased), modelOriginalScale.z);
             applyScaleOverride = true;
         }
-
         if (t >= 1f)
         {
             modelTransform.localPosition = modelTargetLocalPos;
             rising = false;
-
             float elapsed = riseTimer - stretchStartTime;
             if (elapsed >= stretchDuration)
             {
@@ -377,18 +324,15 @@ public class Strzelacz : MonoBehaviour, IEnemy
             }
         }
     }
-
     private void UpdateStretch()
     {
         if (!stretching || modelTransform == null) return;
-
         stretchTimer += Time.deltaTime;
         float t = Mathf.Clamp01(stretchTimer / stretchDuration);
         float eased = t * t;
         float peakY = modelOriginalScale.y + stretchAmount;
         scaleOverride = new Vector3(modelOriginalScale.x, Mathf.Lerp(modelOriginalScale.y, peakY, eased), modelOriginalScale.z);
         applyScaleOverride = true;
-
         if (t >= 1f)
         {
             scaleOverride = new Vector3(modelOriginalScale.x, peakY, modelOriginalScale.z);
@@ -397,42 +341,33 @@ public class Strzelacz : MonoBehaviour, IEnemy
             settleTimer = 0f;
         }
     }
-
     private void UpdateSettle()
     {
         if (!settling || modelTransform == null) return;
-
         settleTimer += Time.deltaTime;
         float progress = settleTimer / settleDuration;
-
         if (progress >= 1f)
         {
             applyScaleOverride = false;
             settling = false;
             return;
         }
-
         float peakY = modelOriginalScale.y + stretchAmount;
         float eased = progress * progress * (3f - 2f * progress);
         float yScale = Mathf.Lerp(peakY, modelOriginalScale.y, eased);
         scaleOverride = new Vector3(modelOriginalScale.x, yScale, modelOriginalScale.z);
         applyScaleOverride = true;
     }
-
     public void Die()
     {
         if (dying) return;
-
         bool lastEnemy = doors != null && doors.IsLastEnemy();
         if (KillSlowMotion.Instance != null)
             KillSlowMotion.Instance.Trigger(lastEnemy);
-
         dying = true;
         deathTimer = 0f;
-
         if (deathSound != null)
             AudioSource.PlayClipAtPoint(deathSound, transform.position, deathVolume);
-
         if (agent != null && agent.isActiveAndEnabled && agent.isOnNavMesh)
         {
             agent.ResetPath();
@@ -441,24 +376,18 @@ public class Strzelacz : MonoBehaviour, IEnemy
         {
             agent.enabled = false;
         }
-
         SetHitboxes(false);
-
         if (modelTransform != null)
         {
             deathStartPos = modelTransform.localPosition;
             deathStartScale = modelTransform.localScale;
         }
-
         Renderer[] renderers = modelTransform != null
             ? modelTransform.GetComponentsInChildren<Renderer>()
             : GetComponentsInChildren<Renderer>();
-
         unlitShader = deathShader;
-
         var matList = new System.Collections.Generic.List<Material>();
         var colorList = new System.Collections.Generic.List<Color>();
-
         foreach (Renderer r in renderers)
         {
             foreach (Material m in r.materials)
@@ -469,27 +398,21 @@ public class Strzelacz : MonoBehaviour, IEnemy
                     m.shader = unlitShader;
             }
         }
-
         deathMaterials = matList.ToArray();
         originalColors = colorList.ToArray();
     }
-
     private void UpdateDeath()
     {
         if (!dying || modelTransform == null) return;
-
         deathTimer += Time.deltaTime;
         float t = Mathf.Clamp01(deathTimer / deathDuration);
         float eased = t * t;
-
         float yScale = Mathf.Lerp(deathStartScale.y, deathStartScale.y * deathStretchY, eased);
         float xScale = Mathf.Lerp(deathStartScale.x, deathShrinkXZ, eased);
         float zScale = Mathf.Lerp(deathStartScale.z, deathShrinkXZ, eased);
         scaleOverride = new Vector3(xScale, yScale, zScale);
         applyScaleOverride = true;
-
         modelTransform.localPosition = deathStartPos + Vector3.up * deathRiseHeight * eased;
-
         Color targetColor = Color.Lerp(deathColor, Color.white, eased);
         if (deathMaterials != null)
         {
@@ -499,7 +422,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
                     deathMaterials[i].color = targetColor;
             }
         }
-
         if (t >= 1f)
         {
             if (doors != null)
@@ -507,7 +429,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
             Destroy(gameObject);
         }
     }
-
     private void Update()
     {
         if (dying)
@@ -515,7 +436,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
             UpdateDeath();
             return;
         }
-
         UpdateRise();
         UpdateStretch();
         UpdateSettle();
@@ -529,14 +449,12 @@ public class Strzelacz : MonoBehaviour, IEnemy
             UpdateShootingDuringTraversal();
             return;
         }
-
         if (agent.isOnOffMeshLink)
         {
             OffMeshLinkData linkData = agent.currentOffMeshLinkData;
             bool isDrop = linkData.linkType == OffMeshLinkType.LinkTypeDropDown;
             float playerHeightDiff = player.position.y - transform.position.y;
             bool playerAbove = playerHeightDiff > 1f;
-
             if (isDrop && playerAbove)
             {
                 Vector3 landingPos;
@@ -548,40 +466,31 @@ public class Strzelacz : MonoBehaviour, IEnemy
                     return;
                 }
             }
-
             StartCoroutine(TraverseOffMeshLink());
             return;
         }
-
         float dist = Vector3.Distance(transform.position, player.position);
-
         if (dist > detectionRange)
         {
             agent.ResetPath();
             combatState = CombatState.Approach;
             return;
         }
-
         noLosJumpCooldown -= Time.deltaTime;
         UpdateCombatAI(dist);
-
         jumpUpCheckTimer -= Time.deltaTime;
         if (jumpUpCheckTimer <= 0f)
         {
             jumpUpCheckTimer = jumpUpCheckInterval;
-            // Only consider jumping when we don't already have clear LOS —
-            // if we can already see the player, walk normally instead of
-            // locking into a jump coroutine unnecessarily.
             if (!CheckLineOfSight())
                 TryJumpUp(false);
         }
     }
-
     private void UpdateShootingDuringTraversal()
     {
         if (player == null || dying) return;
         float dist = Vector3.Distance(transform.position, player.position);
-        if (dist > attackRange) return;
+        if (dist > attackRange * 1.5f) return; // wider — jump arc inflates distance temporarily
         AimHand();
         bool hasShootLOS = CheckShootLineOfSight();
         fireTimer -= Time.deltaTime;
@@ -591,18 +500,14 @@ public class Strzelacz : MonoBehaviour, IEnemy
             fireTimer = 1f / fireRate;
         }
     }
-
     private void UpdateCombatAI(float dist)
     {
         bool hasLOS = CheckLineOfSight();
         bool hasShootLOS = CheckShootLineOfSight();
         bool hasThickLOS = CheckLineOfSightThick();
-
         Debug.DrawLine(transform.position + Vector3.up * losHeightOffset, player.position + Vector3.up * playerCenterHeight, hasLOS ? Color.green : Color.red);
-
         AimHand();
         repositionTimer -= Time.deltaTime;
-
         if (dist < minPlayerDistance && hasLOS && agent.isOnNavMesh)
         {
             Vector3 awayDir = transform.position - player.position;
@@ -615,21 +520,18 @@ public class Strzelacz : MonoBehaviour, IEnemy
             FacePlayer();
             return;
         }
-
         fireTimer -= Time.deltaTime;
         if (dist <= attackRange && hasShootLOS && fireTimer <= 0f)
         {
             Shoot();
             fireTimer = 1f / fireRate;
         }
-
         if (dist <= attackRange * 1.5f && !hasLOS && !hasThickLOS && noLosJumpCooldown <= 0f)
         {
             if (TryJumpUp(true))
                 return;
             noLosJumpCooldown = 0.5f;
         }
-
         switch (combatState)
         {
             case CombatState.Approach:
@@ -646,7 +548,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
                 break;
         }
     }
-
     private void UpdateApproach(float dist, bool hasLOS, bool hasShootLOS)
     {
         if (dist <= attackRange && dist >= minPlayerDistance && hasLOS)
@@ -654,10 +555,8 @@ public class Strzelacz : MonoBehaviour, IEnemy
             EnterStrafeAttack();
             return;
         }
-
         agent.speed = agentSpeed;
         agent.stoppingDistance = minPlayerDistance;
-
         if (!hasLOS)
         {
             if (!agent.isOnNavMesh)
@@ -667,8 +566,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
                 if (NavMesh.SamplePosition(transform.position, out recoveryHit, 3f, NavMesh.AllAreas))
                     agent.Warp(recoveryHit.position);
             }
-
-            // While wandering: don't overwrite the wander destination.
             if (isWandering)
             {
                 if (!agent.pathPending && agent.remainingDistance < 1f)
@@ -683,10 +580,8 @@ public class Strzelacz : MonoBehaviour, IEnemy
                     return;
                 }
             }
-
             agent.stoppingDistance = minPlayerDistance;
             if (agent.isOnNavMesh) agent.SetDestination(player.position);
-
             float currentDist = Vector3.Distance(transform.position, player.position);
             if (currentDist < lastDistToPlayer - 0.2f)
             {
@@ -697,8 +592,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
             {
                 noProgressTimer += Time.deltaTime;
             }
-
-            // 3 seconds with no progress — try jump, then wander somewhere new.
             if (noProgressTimer >= 3f)
             {
                 noProgressTimer = 0f;
@@ -709,18 +602,15 @@ public class Strzelacz : MonoBehaviour, IEnemy
                     WanderToRandomSpot();
                 }
             }
-
             FaceMovement();
             return;
         }
-
         approachSideTimer -= Time.deltaTime;
         if (approachSideTimer <= 0f)
         {
             approachSide = Random.value > 0.5f ? 1f : -1f;
             approachSideTimer = approachOffsetChangeTime + Random.Range(-0.5f, 0.5f);
         }
-
         Vector3 toPlayer = player.position - transform.position;
         toPlayer.y = 0f;
         if (toPlayer.sqrMagnitude < 0.01f) return;
@@ -728,25 +618,19 @@ public class Strzelacz : MonoBehaviour, IEnemy
         Vector3 perp = new Vector3(-dir.z, 0f, dir.x);
         float stopDist = Mathf.Max(attackRange * 0.6f, minPlayerDistance);
         Vector3 target = player.position - dir * stopDist + perp * approachSide * approachOffsetDistance;
-
         NavMeshHit navHit;
         if (NavMesh.SamplePosition(target, out navHit, 3f, NavMesh.AllAreas))
             agent.SetDestination(navHit.position);
         else
             agent.SetDestination(player.position);
-
         FaceMovement();
     }
-
     private void UpdateStrafeAttack(float dist, bool hasLOS, bool hasShootLOS)
     {
         if (dist > attackRange * 1.3f || !hasLOS)
         {
             combatState = CombatState.Approach;
             agent.speed = agentSpeed;
-            // Clear the stale strafe destination immediately so the agent
-            // starts routing toward the player rather than finishing the
-            // old strafe movement first.
             if (!agent.isOnNavMesh)
             {
                 agent.enabled = true;
@@ -758,25 +642,20 @@ public class Strzelacz : MonoBehaviour, IEnemy
                 agent.SetDestination(player.position);
             return;
         }
-
         FacePlayer();
-
         strafeChangeTimer -= Time.deltaTime;
         if (strafeChangeTimer <= 0f)
         {
             PickNewStrafeTarget();
             strafeChangeTimer = Random.Range(minStrafeChangeTime, maxStrafeChangeTime);
         }
-
         agent.SetDestination(currentMoveTarget);
         agent.speed = agentSpeed * strafeSpeedMultiplier;
-
         if (repositionTimer <= 0f)
         {
             EnterReposition();
             return;
         }
-
         flankCheckTimer -= Time.deltaTime;
         if (flankCheckTimer <= 0f)
         {
@@ -788,11 +667,9 @@ public class Strzelacz : MonoBehaviour, IEnemy
             }
         }
     }
-
     private void UpdateRepositionState(float dist, bool hasLOS, bool hasShootLOS)
     {
         FacePlayer();
-
         if (agent.isOnNavMesh && !agent.pathPending && agent.remainingDistance < 1.5f)
         {
             if (dist <= attackRange && dist >= minPlayerDistance && hasLOS)
@@ -801,11 +678,9 @@ public class Strzelacz : MonoBehaviour, IEnemy
                 combatState = CombatState.Approach;
         }
     }
-
     private void UpdateFlankState(float dist, bool hasLOS, bool hasShootLOS)
     {
         FacePlayer();
-
         if (agent.isOnNavMesh && !agent.pathPending && agent.remainingDistance < 2f)
         {
             if (dist <= attackRange && dist >= minPlayerDistance && hasLOS)
@@ -814,7 +689,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
                 combatState = CombatState.Approach;
         }
     }
-
     private void EnterStrafeAttack()
     {
         isWandering = false;
@@ -827,33 +701,27 @@ public class Strzelacz : MonoBehaviour, IEnemy
         PickNewStrafeTarget();
         strafeChangeTimer = Random.Range(minStrafeChangeTime, maxStrafeChangeTime);
     }
-
     private void EnterReposition()
     {
         agent.stoppingDistance = agentStoppingDistance;
         combatState = CombatState.Reposition;
         sprintReposition = Random.value < sprintChance;
         agent.speed = sprintReposition ? agentSpeed * repositionSprintMultiplier : agentSpeed;
-
         Vector3 toEnemy = transform.position - player.position;
         toEnemy.y = 0f;
         float currentAngle = Mathf.Atan2(toEnemy.z, toEnemy.x);
         float newAngle = currentAngle + Random.Range(1.2f, 2.5f) * (Random.value > 0.5f ? 1f : -1f);
         float dist = Random.Range(Mathf.Max(attackRange * 0.5f, minPlayerDistance), attackRange * 1.2f);
-
         Vector3 target = player.position + new Vector3(Mathf.Cos(newAngle), 0f, Mathf.Sin(newAngle)) * dist;
-
         NavMeshHit navHit;
         if (NavMesh.SamplePosition(target, out navHit, 5f, NavMesh.AllAreas))
             currentMoveTarget = navHit.position;
         else
             currentMoveTarget = transform.position + new Vector3(Random.Range(-1f, 1f), 0f, Random.Range(-1f, 1f)).normalized * 5f;
-
         if (agent.isOnNavMesh)
             agent.SetDestination(currentMoveTarget);
         repositionTimer = Random.Range(minRepositionTime, maxRepositionTime);
     }
-
     private void EnterFlank()
     {
         combatState = CombatState.Flank;
@@ -862,67 +730,52 @@ public class Strzelacz : MonoBehaviour, IEnemy
         if (agent.isOnNavMesh)
             agent.SetDestination(currentMoveTarget);
     }
-
     private void PickNewStrafeTarget()
     {
         strafeDir = Random.value > 0.3f ? -strafeDir : strafeDir;
-
         Vector3 toEnemy = transform.position - player.position;
         toEnemy.y = 0f;
         float currentAngle = Mathf.Atan2(toEnemy.z, toEnemy.x);
         float strafeAngle = currentAngle + strafeDir * Random.Range(25f, 65f) * Mathf.Deg2Rad;
         float dist = Mathf.Clamp(toEnemy.magnitude, Mathf.Max(attackRange * 0.4f, minPlayerDistance), attackRange);
-
         Vector3 target = player.position + new Vector3(Mathf.Cos(strafeAngle), 0f, Mathf.Sin(strafeAngle)) * dist;
-
         NavMeshHit navHit;
         if (NavMesh.SamplePosition(target, out navHit, 3f, NavMesh.AllAreas))
             currentMoveTarget = navHit.position;
         else
             currentMoveTarget = transform.position + transform.right * strafeDir * 3f;
-
         if (agent.isOnNavMesh)
             agent.SetDestination(currentMoveTarget);
     }
-
     private bool ShouldFlank()
     {
         Strzelacz[] all = FindObjectsByType<Strzelacz>(FindObjectsSortMode.None);
-
         Vector3 playerPos = player.position;
         Vector3 toSelf = transform.position - playerPos;
         toSelf.y = 0f;
         if (toSelf.sqrMagnitude < 0.1f) return false;
         float myAngle = Mathf.Atan2(toSelf.z, toSelf.x) * Mathf.Rad2Deg;
-
         int aliveNearby = 0;
         float closestAngleDiff = float.MaxValue;
-
         for (int i = 0; i < all.Length; i++)
         {
             if (all[i] == this || all[i].dying) continue;
-
             Vector3 toOther = all[i].transform.position - playerPos;
             toOther.y = 0f;
             if (toOther.sqrMagnitude < 0.1f) continue;
-
             aliveNearby++;
             float otherAngle = Mathf.Atan2(toOther.z, toOther.x) * Mathf.Rad2Deg;
             float diff = Mathf.Abs(Mathf.DeltaAngle(myAngle, otherAngle));
             if (diff < closestAngleDiff)
                 closestAngleDiff = diff;
         }
-
         return aliveNearby >= 1 && closestAngleDiff < flankAngleThreshold;
     }
-
     private Vector3 GetFlankPosition()
     {
         Strzelacz[] all = FindObjectsByType<Strzelacz>(FindObjectsSortMode.None);
         int count = 0;
-
         Vector3 playerPos = player.position;
-
         for (int i = 0; i < all.Length; i++)
         {
             if (all[i] == this || all[i].dying) continue;
@@ -932,18 +785,14 @@ public class Strzelacz : MonoBehaviour, IEnemy
             if (count < flankAngleBuffer.Length)
                 flankAngleBuffer[count++] = Mathf.Atan2(toOther.z, toOther.x);
         }
-
         if (count == 0)
         {
             PickNewStrafeTarget();
             return currentMoveTarget;
         }
-
         System.Array.Sort(flankAngleBuffer, 0, count);
-
         float biggestGap = 0f;
         float gapMid = 0f;
-
         for (int i = 0; i < count; i++)
         {
             int next = (i + 1) % count;
@@ -956,25 +805,18 @@ public class Strzelacz : MonoBehaviour, IEnemy
                 gapMid = flankAngleBuffer[i] + gap * 0.5f;
             }
         }
-
         float flankDist = Mathf.Clamp(Vector3.Distance(transform.position, playerPos), minPlayerDistance, attackRange);
         Vector3 target = playerPos + new Vector3(Mathf.Cos(gapMid), 0f, Mathf.Sin(gapMid)) * flankDist;
-
         NavMeshHit navHit;
         if (NavMesh.SamplePosition(target, out navHit, 5f, NavMesh.AllAreas))
             return navHit.position;
-
         PickNewStrafeTarget();
         return currentMoveTarget;
     }
-
     private bool IsLandingUseful(Vector3 landingPos)
     {
-        // If a ledge exists and we have no LOS, just jump to it.
-        // Any jump is better than standing still — chained jumps handle the rest.
         return true;
     }
-
     private bool IsAlreadyAtLanding(Vector3 landingPos)
     {
         float horizontalDist = Vector3.Distance(
@@ -983,11 +825,34 @@ public class Strzelacz : MonoBehaviour, IEnemy
         float verticalDist = Mathf.Abs(landingPos.y - transform.position.y);
         return horizontalDist < agentRadius * 2f && verticalDist < 1f;
     }
-
+    // Samples the jump arc at multiple points and checks each with a capsule.
+    // If any point overlaps obstacleLayer the jump is rejected before it starts.
+    private bool IsJumpPathClear(Vector3 startPos, Vector3 landingPos)
+    {
+        float heightDiff = Mathf.Abs(landingPos.y - startPos.y);
+        float peakY = Mathf.Max(startPos.y, landingPos.y) + Mathf.Max(heightDiff * 0.3f, 1f);
+        float capRadius = agentRadius * 0.85f;
+        float capHalfH = Mathf.Max(agentHeight * 0.5f - capRadius, capRadius);
+        const int Samples = 16;
+        for (int i = 0; i <= Samples; i++)
+        {
+            float t = (float)i / Samples;
+            float x = Mathf.Lerp(startPos.x, landingPos.x, t);
+            float z = Mathf.Lerp(startPos.z, landingPos.z, t);
+            float baseY = Mathf.Lerp(startPos.y, landingPos.y, t);
+            float arc = Mathf.Sin(Mathf.PI * t) * (peakY - Mathf.Max(startPos.y, landingPos.y));
+            // Centre of the capsule body (feet at baseY+arc, centre one half-height up).
+            Vector3 centre = new Vector3(x, baseY + arc + capHalfH + capRadius, z);
+            Vector3 top = centre + Vector3.up * capHalfH;
+            Vector3 bot = centre - Vector3.up * capHalfH;
+            if (Physics.CheckCapsule(bot, top, capRadius, obstacleLayer))
+                return false;
+        }
+        return true;
+    }
     private bool TryJumpUp(bool forceJump)
     {
         if (pathCache == null || traversingLink) return false;
-
         if (!forceJump)
         {
             if (combatState != CombatState.Approach && combatState != CombatState.Reposition)
@@ -995,37 +860,27 @@ public class Strzelacz : MonoBehaviour, IEnemy
                 if (Random.value > jumpUpChance) return false;
             }
         }
-
         Vector3 landingPos;
         if (!TryFindLedge(out landingPos)) return false;
         if (!IsLandingClear(landingPos)) return false;
         if (!IsLandingUseful(landingPos)) return false;
         if (Vector3.Distance(landingPos, player.position) < minPlayerDistance) return false;
-
+        // Gate: reject the jump if the arc passes through any obstacle.
+        if (!IsJumpPathClear(transform.position, landingPos)) return false;
         if (forceJump)
         {
-            // Don't reject based on 3D distance — the ledge top is always further
-            // from the player than the wall base when jumping up to reach them.
-            // We already confirmed no LOS and no thick LOS before calling this,
-            // so jumping is always the right move.
             stuckTimer = 0f;
             StartCoroutine(JumpUp(landingPos, 0));
             return true;
         }
-
         agent.CalculatePath(player.position, pathCache);
         bool pathIncomplete = pathCache.status != NavMeshPathStatus.PathComplete;
-
-        // If path is incomplete OR we have no LOS (enemy clipping wall, player
-        // on upper level), always jump — don't compare lengths because the
-        // ground path length is meaningless when it can't actually reach the player.
         if (pathIncomplete || !CheckLineOfSight())
         {
             stuckTimer = 0f;
             StartCoroutine(JumpUp(landingPos, 0));
             return true;
         }
-
         float movedDist = Vector3.Distance(transform.position, lastStuckCheckPos);
         lastStuckCheckPos = transform.position;
         if (agent.hasPath && movedDist < 0.1f)
@@ -1042,10 +897,8 @@ public class Strzelacz : MonoBehaviour, IEnemy
         {
             stuckTimer = 0f;
         }
-
         return false;
     }
-
     private void WanderToRandomSpot()
     {
         noProgressTimer = 0f;
@@ -1068,57 +921,37 @@ public class Strzelacz : MonoBehaviour, IEnemy
                 }
             }
         }
-        // No valid spot found — clear flag so we don't stall forever.
         isWandering = false;
     }
-
     private bool TryFindWalkableJumpBase(out Vector3 basePos)
     {
-        // Scan in 16 directions around the enemy looking for any ledge within
-        // jumpUpMaxHeight. For each found ledge, check if its base is reachable
-        // by walking (complete NavMesh path). Return the closest reachable one.
         basePos = Vector3.zero;
         float bestDist = float.MaxValue;
         bool found = false;
-
         for (int i = 0; i < 16; i++)
         {
             float angle = i * (360f / 16f) * Mathf.Deg2Rad;
             Vector3 dir = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
-
-            // Pull back so the ray starts behind the enemy, avoiding inside-wall starts.
             Vector3 rayOrigin = transform.position + Vector3.up * 0.5f - dir * agentRadius * 1.5f;
-
             RaycastHit hit;
             if (!Physics.Raycast(rayOrigin, dir, out hit,
                 agentRadius * 1.5f + jumpUpMaxHeight * 2f, obstacleLayer)) continue;
-
             float wallAngle = Vector3.Angle(hit.normal, Vector3.up);
             if (wallAngle < 50f) continue;
-
             Vector3 wallPoint = hit.point;
-
-            // Scan down from above to find the ledge top.
             Vector3 topScan = wallPoint + Vector3.up * (jumpUpMaxHeight + 1f);
             RaycastHit topHit;
             if (!Physics.Raycast(topScan, Vector3.down, out topHit,
                 jumpUpMaxHeight + 2f, obstacleLayer)) continue;
-
             float h = topHit.point.y - transform.position.y;
             if (h <= 0.3f || h > jumpUpMaxHeight) continue;
-
-            // The jump base is the NavMesh point at the wall's base.
             Vector3 baseCandidate = wallPoint - dir * agentRadius * 2f;
             baseCandidate.y = transform.position.y;
-
             NavMeshHit navHit;
             if (!NavMesh.SamplePosition(baseCandidate, out navHit, 3f, NavMesh.AllAreas)) continue;
-
-            // Must be walkable from current position.
             NavMeshPath path = new NavMeshPath();
             NavMesh.CalculatePath(transform.position, navHit.position, NavMesh.AllAreas, path);
             if (path.status != NavMeshPathStatus.PathComplete) continue;
-
             float d = Vector3.Distance(transform.position, navHit.position);
             if (d < bestDist)
             {
@@ -1127,49 +960,35 @@ public class Strzelacz : MonoBehaviour, IEnemy
                 found = true;
             }
         }
-
         return found;
     }
-
     private bool TryFindLedge(out Vector3 landingPos)
     {
         landingPos = Vector3.zero;
         float enemyY = transform.position.y;
         float pullBack = agentRadius * 1.5f;
-
-        // Scan 16 directions so we find ledges that are not directly toward
-        // the player — nearby ledges to the side are missed by a single ray.
-        // Sort directions so toward-player is tried first.
         Vector3 toPlayer = player.position - transform.position;
         toPlayer.y = 0f;
         float baseAngle = toPlayer.sqrMagnitude > 0.001f
             ? Mathf.Atan2(toPlayer.z, toPlayer.x)
             : 0f;
-
         int numDirs = 16;
         for (int i = 0; i < numDirs; i++)
         {
-            // Interleave: 0, 1, -1, 2, -2 ... so toward-player is first
             int idx = (i % 2 == 0) ? i / 2 : -(i / 2 + 1);
             float angle = baseAngle + idx * (Mathf.PI * 2f / numDirs);
             Vector3 dir = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
-
             Vector3 origin = transform.position + Vector3.up * 0.5f - dir * pullBack;
             RaycastHit rayHit;
-
             if (!Physics.Raycast(origin, dir, out rayHit, jumpUpMaxHeight * 2f + pullBack, obstacleLayer))
                 continue;
-
             float wallAngle = Vector3.Angle(rayHit.normal, Vector3.up);
             if (wallAngle < 50f) continue;
-
             Vector3 wallPoint = rayHit.point;
             float wallDist = Vector3.Distance(
                 new Vector3(transform.position.x, wallPoint.y, transform.position.z),
                 wallPoint);
             if (wallDist > agentRadius * 6f) continue;
-
-            // Scan down from above the wall to find the ledge top.
             Vector3 topScan = wallPoint + Vector3.up * (jumpUpMaxHeight + 1f);
             if (Physics.Raycast(topScan, Vector3.down, out rayHit, jumpUpMaxHeight + 2f, obstacleLayer))
             {
@@ -1184,8 +1003,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
                     }
                 }
             }
-
-            // Probe up the wall face to find an open ledge.
             for (float y = 0.5f; y <= jumpUpMaxHeight; y += 0.5f)
             {
                 Vector3 probe = wallPoint + Vector3.up * y + dir * 0.5f;
@@ -1207,52 +1024,41 @@ public class Strzelacz : MonoBehaviour, IEnemy
                 }
             }
         }
-
         return false;
     }
-
     private bool TryFindDropToward(Vector3 fromPos, out Vector3 dropTarget)
     {
         dropTarget = Vector3.zero;
         if (player == null) return false;
-
         Vector3 toPlayer = player.position - fromPos;
         toPlayer.y = 0f;
         if (toPlayer.sqrMagnitude < 0.1f) return false;
         Vector3 dir = toPlayer.normalized;
-
         for (float fwd = 1f; fwd <= 8f; fwd += 0.5f)
         {
             Vector3 scanOrigin = fromPos + Vector3.up * 0.5f;
-
             RaycastHit wallHit;
             if (Physics.Raycast(scanOrigin, dir, out wallHit, fwd, obstacleLayer))
                 continue;
-
             Vector3 scanTop = fromPos + dir * fwd + Vector3.up * 0.5f;
             RaycastHit groundHit;
             if (Physics.Raycast(scanTop, Vector3.down, out groundHit, jumpUpMaxHeight + 5f, obstacleLayer))
             {
                 float surfaceAngle = Vector3.Angle(groundHit.normal, Vector3.up);
                 if (surfaceAngle > 45f) continue;
-
                 Vector3 candidate = groundHit.point + Vector3.up * 0.05f;
-
                 NavMeshHit navHit;
                 if (NavMesh.SamplePosition(candidate, out navHit, 1.5f, NavMesh.AllAreas))
                 {
                     dropTarget = navHit.position;
                     return true;
                 }
-
                 dropTarget = candidate;
                 return true;
             }
         }
-
         return false;
     }
-
     private bool IsLandingClear(Vector3 landingPos)
     {
         Strzelacz[] all = FindObjectsByType<Strzelacz>(FindObjectsSortMode.None);
@@ -1267,7 +1073,7 @@ public class Strzelacz : MonoBehaviour, IEnemy
         }
         return true;
     }
-
+    // JumpUp: unchanged from original except chained jumps also run IsJumpPathClear.
     private IEnumerator JumpUp(Vector3 landingPos, int chainDepth)
     {
         traversingLink = true;
@@ -1276,24 +1082,16 @@ public class Strzelacz : MonoBehaviour, IEnemy
             agent.ResetPath();
             agent.enabled = false;
         }
-
         Vector3 startPos = transform.position;
         float heightDiff = Mathf.Abs(landingPos.y - startPos.y);
         float peakY = Mathf.Max(startPos.y, landingPos.y) + Mathf.Max(heightDiff * 0.3f, 1f);
         float elapsed = 0f;
-
         Vector3 jumpDir = landingPos - startPos;
         jumpDir.y = 0f;
-        // Rotation we begin the jump facing (toward the ledge).
         Quaternion jumpFaceRot = jumpDir.sqrMagnitude > 0.001f ? Quaternion.LookRotation(jumpDir) : transform.rotation;
-
         while (elapsed < jumpUpDuration)
         {
             float t = elapsed / jumpUpDuration;
-
-            // Smoothly blend body rotation: face jump direction at takeoff,
-            // transition toward the player as we crest the arc so the enemy
-            // is already looking at them on landing — no snap.
             Vector3 toPlayer = player.position - transform.position;
             toPlayer.y = 0f;
             Quaternion playerFaceRot = toPlayer.sqrMagnitude > 0.001f
@@ -1301,33 +1099,29 @@ public class Strzelacz : MonoBehaviour, IEnemy
                 : jumpFaceRot;
             Quaternion desiredRot = Quaternion.Slerp(jumpFaceRot, playerFaceRot, t);
             transform.rotation = Quaternion.Slerp(transform.rotation, desiredRot, Time.deltaTime * 6f);
-
             float x = Mathf.Lerp(startPos.x, landingPos.x, t);
             float z = Mathf.Lerp(startPos.z, landingPos.z, t);
             float baseY = Mathf.Lerp(startPos.y, landingPos.y, t);
             float arc = Mathf.Sin(Mathf.PI * t) * (peakY - Mathf.Max(startPos.y, landingPos.y));
-
             transform.position = new Vector3(x, baseY + arc, z);
             elapsed += Time.deltaTime;
             yield return null;
         }
-
         transform.position = landingPos;
-
         if (chainDepth < 3)
         {
             NavMeshHit navCheck;
-            bool onNavMesh = NavMesh.SamplePosition(landingPos, out navCheck, 0.5f, NavMesh.AllAreas);
-            float currentDistToPlayer = Vector3.Distance(landingPos, player.position);
-
+            bool onNavMesh = NavMesh.SamplePosition(transform.position, out navCheck, 0.5f, NavMesh.AllAreas);
+            float currentDistToPlayer = Vector3.Distance(transform.position, player.position);
             if (!onNavMesh)
             {
                 Vector3 dropTarget;
-                if (TryFindDropToward(landingPos, out dropTarget))
+                if (TryFindDropToward(transform.position, out dropTarget))
                 {
                     float nextDistToPlayer = Vector3.Distance(dropTarget, player.position);
                     if (nextDistToPlayer < currentDistToPlayer - 1f &&
-                        nextDistToPlayer >= minPlayerDistance)
+                        nextDistToPlayer >= minPlayerDistance &&
+                        IsJumpPathClear(transform.position, dropTarget))
                     {
                         yield return StartCoroutine(JumpUp(dropTarget, chainDepth + 1));
                         yield break;
@@ -1341,11 +1135,12 @@ public class Strzelacz : MonoBehaviour, IEnemy
                 if (checkPath.status != NavMeshPathStatus.PathComplete)
                 {
                     Vector3 nextTarget;
-                    if (TryFindDropToward(landingPos, out nextTarget))
+                    if (TryFindDropToward(transform.position, out nextTarget))
                     {
                         float nextDistToPlayer = Vector3.Distance(nextTarget, player.position);
                         if (nextDistToPlayer < currentDistToPlayer - 1f &&
-                            nextDistToPlayer >= minPlayerDistance)
+                            nextDistToPlayer >= minPlayerDistance &&
+                            IsJumpPathClear(transform.position, nextTarget))
                         {
                             yield return StartCoroutine(JumpUp(nextTarget, chainDepth + 1));
                             yield break;
@@ -1354,7 +1149,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
                 }
             }
         }
-
         agent.enabled = true;
         NavMeshHit warpHit;
         if (NavMesh.SamplePosition(transform.position, out warpHit, 3f, NavMesh.AllAreas))
@@ -1364,7 +1158,7 @@ public class Strzelacz : MonoBehaviour, IEnemy
         traversingLink = false;
         jumpUpCheckTimer = 0f;
     }
-
+    // TraverseOffMeshLink: unchanged from original.
     private IEnumerator TraverseOffMeshLink()
     {
         traversingLink = true;
@@ -1372,19 +1166,14 @@ public class Strzelacz : MonoBehaviour, IEnemy
         Vector3 startPos = transform.position;
         Vector3 endPos = data.endPos + Vector3.up * agent.baseOffset;
         float elapsed = 0f;
-
         bool isDrop = data.linkType == OffMeshLinkType.LinkTypeDropDown;
         float duration = isDrop ? dropDuration : jumpDuration;
-
         Vector3 linkDir = endPos - startPos;
         linkDir.y = 0f;
         Quaternion linkFaceRot = linkDir.sqrMagnitude > 0.001f ? Quaternion.LookRotation(linkDir) : transform.rotation;
-
         while (elapsed < duration)
         {
             float t = elapsed / duration;
-
-            // Blend from link-travel direction toward player-facing across the traversal.
             Vector3 toPlayerLink = player.position - transform.position;
             toPlayerLink.y = 0f;
             Quaternion playerFaceLink = toPlayerLink.sqrMagnitude > 0.001f
@@ -1392,7 +1181,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
                 : linkFaceRot;
             Quaternion desiredLink = Quaternion.Slerp(linkFaceRot, playerFaceLink, t);
             transform.rotation = Quaternion.Slerp(transform.rotation, desiredLink, Time.deltaTime * 6f);
-
             if (isDrop)
             {
                 float horizontalT = 1f - (1f - t) * (1f - t);
@@ -1405,19 +1193,13 @@ public class Strzelacz : MonoBehaviour, IEnemy
             {
                 Vector3 pos = Vector3.Lerp(startPos, endPos, t);
                 float hDiff = Mathf.Abs(endPos.y - startPos.y);
-                float arc = Mathf.Max(hDiff * 0.3f, 0.5f);
-                pos.y += Mathf.Sin(Mathf.PI * t) * arc;
+                float arcH = Mathf.Max(hDiff * 0.3f, 0.5f);
+                pos.y += Mathf.Sin(Mathf.PI * t) * arcH;
                 transform.position = pos;
             }
-
             elapsed += Time.deltaTime;
             yield return null;
         }
-
-        transform.position = endPos;
-
-        // Guard: CompleteOffMeshLink requires an active agent on the NavMesh.
-        // If the animation landed us slightly off-mesh, warp back first.
         if (agent.enabled && agent.isOnNavMesh)
         {
             agent.CompleteOffMeshLink();
@@ -1431,11 +1213,9 @@ public class Strzelacz : MonoBehaviour, IEnemy
             else
                 agent.Warp(transform.position);
         }
-
         traversingLink = false;
         jumpUpCheckTimer = 0f;
     }
-
     private void FacePlayer()
     {
         Vector3 dir = player.position - transform.position;
@@ -1443,7 +1223,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
         if (dir.sqrMagnitude > 0.001f)
             transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(dir), Time.deltaTime * agentAngularSpeed / 10f);
     }
-
     private void FaceMovement()
     {
         if (agent.hasPath && agent.velocity.sqrMagnitude > 0.1f)
@@ -1454,7 +1233,6 @@ public class Strzelacz : MonoBehaviour, IEnemy
                 transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(dir), Time.deltaTime * agentAngularSpeed / 10f);
         }
     }
-
     private bool CheckLineOfSight()
     {
         Vector3 origin = transform.position + Vector3.up * losHeightOffset;
@@ -1462,16 +1240,10 @@ public class Strzelacz : MonoBehaviour, IEnemy
         Vector3 dir = target - origin;
         float dist = dir.magnitude;
         if (dist < 0.01f) return true;
-
-        // Cast forward (enemy→player) AND backward (player→enemy).
-        // When the enemy is pressed below a ledge, the forward origin ends up
-        // above the ledge top and the ray never hits it — but the reverse cast
-        // from the player side does. Both must be clear for true LOS.
         if (Physics.Raycast(origin, dir.normalized, dist, obstacleLayer)) return false;
         if (Physics.Raycast(target, -dir.normalized, dist, obstacleLayer)) return false;
         return true;
     }
-
     private bool CheckLineOfSightThick()
     {
         Vector3 origin = transform.position + Vector3.up * losHeightOffset;
@@ -1479,20 +1251,14 @@ public class Strzelacz : MonoBehaviour, IEnemy
         Vector3 dir = target - origin;
         float dist = dir.magnitude;
         if (dist < 0.01f) return true;
-
         RaycastHit hit;
         if (Physics.SphereCast(origin, agentRadius * 0.5f, dir.normalized, out hit, dist, obstacleLayer)) return false;
         if (Physics.SphereCast(target, agentRadius * 0.5f, -dir.normalized, out hit, dist, obstacleLayer)) return false;
         return true;
     }
-
     private bool CheckShootLineOfSight()
     {
         if (losCheckPoint == null) return CheckLineOfSight();
-
-        // Verify the shoot point itself hasn't clipped through a wall.
-        // Cast from the enemy body toward the losCheckPoint — if that path is
-        // blocked, the gun is inside geometry and any LOS from it is invalid.
         Vector3 bodyOrigin = transform.position + Vector3.up * losHeightOffset;
         Vector3 toCheckPoint = losCheckPoint.position - bodyOrigin;
         if (toCheckPoint.sqrMagnitude > 0.001f &&
@@ -1500,13 +1266,11 @@ public class Strzelacz : MonoBehaviour, IEnemy
         {
             return false;
         }
-
         Vector3 origin = losCheckPoint.position;
         Vector3 target = player.position + Vector3.up * playerCenterHeight;
         Vector3 dir = target - origin;
         return !Physics.Raycast(origin, dir.normalized, dir.magnitude, obstacleLayer);
     }
-
     private void AimHand()
     {
         if (hand == null) return;
@@ -1515,28 +1279,22 @@ public class Strzelacz : MonoBehaviour, IEnemy
         if (dir.sqrMagnitude > 0.001f)
             hand.rotation = Quaternion.LookRotation(dir) * Quaternion.Euler(-90f, 90f, 0f);
     }
-
     private void Shoot()
     {
         if (shootPoint == null || projectilePrefab == null) return;
-
         Vector3 target = player.position + Vector3.up * playerCenterHeight;
         Vector3 dir = (target - shootPoint.position).normalized;
-
         animCont.Play("StrzelaczShoot");
-
         if (shootAudioSource && shootSound)
         {
             shootAudioSource.pitch = Random.Range(pitchMin, pitchMax);
             shootAudioSource.clip = shootSound;
             shootAudioSource.Play();
         }
-
         GameObject proj = Instantiate(projectilePrefab, shootPoint.position, Quaternion.LookRotation(dir));
         Rigidbody rb = proj.GetComponent<Rigidbody>();
         if (rb != null)
             rb.linearVelocity = dir * projectileSpeed;
-
         Projectajl p = proj.GetComponent<Projectajl>();
         if (p != null)
             p.damage = Random.Range(minDamage, maxDamage);

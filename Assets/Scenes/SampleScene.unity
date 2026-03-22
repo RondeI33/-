@@ -8496,8 +8496,6 @@ MonoBehaviour:
     m_Bits: 193
   fireRate: 0.45
   autoFire: 1
-  muzzleTrailPrefab: {fileID: 835306423}
-  muzzleTrailDistance: 3
   decalPrefab: {fileID: 8843963820380974318, guid: d4149dbfaffe94848b78ba40ab4ba60d, type: 3}
   maxDecals: 2137
   decalOffset: 0.0001
@@ -13953,10 +13951,22 @@ PrefabInstance:
     - target: {fileID: 1029313066246466240, guid: 1c3424b4e39103e4186d9787b3327204, type: 3}
       propertyPath: 'm_Materials.Array.data[1]'
       value: 
-      objectReference: {fileID: 2100000, guid: 7bc341cbb0247954f86531cab6ace9a2, type: 2}
+      objectReference: {fileID: 2100000, guid: 7a06a05fd465d874baf91dba56926beb, type: 2}
     - target: {fileID: 2223639932434330405, guid: 1c3424b4e39103e4186d9787b3327204, type: 3}
       propertyPath: m_Enabled
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4778517269032893044, guid: 1c3424b4e39103e4186d9787b3327204, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0.0005
+      objectReference: {fileID: 0}
+    - target: {fileID: 4778517269032893044, guid: 1c3424b4e39103e4186d9787b3327204, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0.0132
+      objectReference: {fileID: 0}
+    - target: {fileID: 4778517269032893044, guid: 1c3424b4e39103e4186d9787b3327204, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -40054,8 +40064,6 @@ MonoBehaviour:
     m_Bits: 193
   fireRate: 0.15
   autoFire: 1
-  muzzleTrailPrefab: {fileID: 0}
-  muzzleTrailDistance: 0.5
   decalPrefab: {fileID: 8843963820380974318, guid: d4149dbfaffe94848b78ba40ab4ba60d, type: 3}
   maxDecals: 2137
   decalOffset: 0.016

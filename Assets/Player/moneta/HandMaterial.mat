@@ -31,7 +31,7 @@ Material:
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
-  m_CustomRenderQueue: 3049
+  m_CustomRenderQueue: 2999
   stringTagMap:
     RenderType: Transparent
   disabledShaderPasses:
@@ -42,7 +42,7 @@ Material:
     serializedVersion: 3
     m_TexEnvs:
     - _BaseMap:
-        m_Texture: {fileID: 2800000, guid: 21adbd4041d431348a38ae9859745758, type: 3}
+        m_Texture: {fileID: 2800000, guid: 040213bfcabd9c64aaa3922c2e8f4c6e, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _BumpMap:
@@ -66,7 +66,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MainTex:
-        m_Texture: {fileID: 2800000, guid: 21adbd4041d431348a38ae9859745758, type: 3}
+        m_Texture: {fileID: 2800000, guid: 040213bfcabd9c64aaa3922c2e8f4c6e, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MetallicGlossMap:
@@ -120,7 +120,7 @@ Material:
     - _Metallic: 0.046
     - _OcclusionStrength: 1
     - _Parallax: 0.005
-    - _QueueOffset: 49
+    - _QueueOffset: -1
     - _ReceiveShadows: 1
     - _Smoothness: 0.046
     - _SmoothnessTextureChannel: 0

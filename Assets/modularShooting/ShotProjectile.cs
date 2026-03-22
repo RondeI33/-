@@ -37,6 +37,7 @@ public class ShotProjectile : PortalTraveller
 
     private Vector3 crosshairAimPoint;
     private bool hasConverged;
+    private Vector3 initialLateralOffset;
 
     void Awake()
     {
@@ -235,6 +236,12 @@ public class ShotProjectile : PortalTraveller
 
         rb.linearVelocity = velocity;
 
+        // Record how far the bullet starts from the camera ray so we can
+        // lerp it to zero over convergenceDist without any overshoot.
+        float spawnProj = Vector3.Dot(transform.position - cameraPosition, cameraDirection);
+        Vector3 spawnOnRay = cameraPosition + cameraDirection * spawnProj;
+        initialLateralOffset = transform.position - spawnOnRay;
+
         if (trails.Length > 0)
             StartCoroutine(ClearTrailsNextFrame());
     }
@@ -317,30 +324,25 @@ public class ShotProjectile : PortalTraveller
             float spd = rb.linearVelocity.magnitude;
             if (spd > 0.01f)
             {
+                // Lerp the lateral offset to zero over convergenceDist.
+                // Direct position correction — cannot overshoot by definition.
+                float t = Mathf.Clamp01(proj / convergenceDist);
+                Vector3 onRay = cameraPosition + cameraDirection * proj;
+                Vector3 correctedPos = onRay + initialLateralOffset * (1f - t);
+                rb.position = correctedPos;
+                transform.position = correctedPos;
+                rb.linearVelocity = (crosshairAimPoint - correctedPos).normalized * spd;
+                Physics.SyncTransforms();
+
                 if (proj >= convergenceDist)
                 {
                     hasConverged = true;
-                    Vector3 onRay = cameraPosition + cameraDirection * proj;
-                    rb.position = onRay;
-                    transform.position = onRay;
-                    Physics.SyncTransforms();
-                    rb.linearVelocity = (crosshairAimPoint - onRay).normalized * spd;
-
-                    // Enable trails now that the bullet is on the camera ray.
-                    trailSegmentStart = onRay;
+                    trailSegmentStart = correctedPos;
                     foreach (var trail in trails)
                     {
                         trail.Clear();
                         trail.emitting = true;
                     }
-                }
-                else
-                {
-                    Vector3 toAim = (crosshairAimPoint - rb.position).normalized;
-                    Vector3 newDir = Vector3.RotateTowards(
-                        rb.linearVelocity.normalized, toAim,
-                        360f * Mathf.Deg2Rad * Time.fixedDeltaTime, 0f);
-                    rb.linearVelocity = newDir * spd;
                 }
             }
         }

@@ -95,8 +95,8 @@ public class FirstPersonController : PortalTraveller
     private void FixedUpdate()
     {
         HandleSlopeSliding();
-        HandleGravity();
         MovePlayer();
+        HandleGravity();
         SpeedQueue();
 
     }
@@ -178,19 +178,12 @@ public class FirstPersonController : PortalTraveller
 
         if (jumpPressed && isGrounded)
         {
-            if (!isSlidingOnSlope)
+            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+            if (isSlidingOnSlope)
             {
-                velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
-            }
-            else
-            {
-                RaycastHit hit;
-                Vector3 sphereOrigin = transform.position + Vector3.down * 0.33f + controller.center * 1.33f;
-                if (Physics.SphereCast(sphereOrigin, 0.5f, Vector3.down, out hit, 0.5f, ~(1 << gameObject.layer), QueryTriggerInteraction.Ignore))
-                {
-                    Vector3 pushDir = Vector3.ProjectOnPlane(hit.normal, Vector3.up).normalized;
-                    moveDirection = pushDir * slideSpeed * 2f;
-                }
+                // Clear slide state so player isn't pulled back down mid-air
+                cachedSlideDir = Vector3.zero;
+                currentSlideSpeed = 1.33f;
             }
         }
         jumpPressed = false;
@@ -316,4 +309,4 @@ public class FirstPersonController : PortalTraveller
     {
         return walkSpeed;
     }
-}   
+}
